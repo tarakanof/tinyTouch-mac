@@ -8,15 +8,15 @@ struct SettingsView: View {
         TabView(selection: $store.settingsTab) {
             Tab("General", systemImage: "gearshape", value: SettingsTab.general) {
                 DeviceGate { GeneralSettingsView() }
-                    .frame(height: 735)
+                    .frame(height: 714)
             }
             Tab("Lighting", systemImage: "lightbulb", value: SettingsTab.lighting) {
                 DeviceGate { LightingSettingsView() }
-                    .frame(height: 750)
+                    .frame(height: 730)
             }
             Tab("Fingerprints", systemImage: "touchid", value: SettingsTab.fingers) {
                 DeviceGate { FingersView() }
-                    .frame(height: 560)
+                    .frame(height: 525)
             }
             Tab("Computers", systemImage: "laptopcomputer", value: SettingsTab.computers) {
                 DeviceGate { ComputersView() }
