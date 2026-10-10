@@ -63,7 +63,8 @@ final class DeviceStore {
 
     private var enrollmentTask: Task<Void, Never>?
     private var approvalTask: Task<CLIResult, Error>?
-    private var watchTask: Task<Void, Never>?
+    private var portWatcher: PortWatcher?
+    private var portChangeTask: Task<Void, Never>?
 
     var isBusy: Bool { busyCount > 0 }
 
@@ -90,11 +91,10 @@ final class DeviceStore {
     // MARK: - Lifecycle
 
     func start() {
-        guard watchTask == nil else { return }
-        watchTask = Task { [weak self] in
-            await self?.refreshAll()
-            await self?.watchPorts()
-        }
+        guard portWatcher == nil else { return }
+        portWatcher = PortWatcher { [weak self] in self?.portsChanged() }
+        portWatcher?.start()
+        Task { await refreshAll() }
     }
 
     func relocateCLI() async {
@@ -103,20 +103,20 @@ final class DeviceStore {
         if cli != nil { await refreshAll() }
     }
 
-    /// Polls `ports --json`, which lists serial paths without opening them,
-    /// so plug and unplug are noticed without interrupting the HID helper.
-    private func watchPorts() async {
-        while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(3))
-            guard let cli, !isBusy else { continue }
-            guard let result = try? await cli.runDetached(["ports", "--json"]) else { continue }
+    /// Re-reads `ports --json` shortly after IOKit reports a serial device change.
+    /// The delay lets a reconnecting device finish enumerating.
+    private func portsChanged() {
+        portChangeTask?.cancel()
+        portChangeTask = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let cli,
+                  let result = try? await cli.runDetached(["ports", "--json"]) else { return }
             let ports = Self.decodePorts(result.stdout)
-            guard ports != availablePorts else { continue }
             availablePorts = ports
             if let port, !ports.contains(port) {
                 connection = .disconnected
                 status = nil
-            } else if port == nil, !ports.isEmpty {
+            } else if port == nil, !ports.isEmpty, !isBusy {
                 await refreshAll()
             }
         }
