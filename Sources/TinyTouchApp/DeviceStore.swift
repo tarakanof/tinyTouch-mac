@@ -43,7 +43,9 @@ struct EnrollmentProgress: Equatable {
 final class DeviceStore {
     private(set) var cli: CLI?
     private(set) var connection: Connection = .searching
-    private(set) var status: DeviceStatus?
+    private(set) var status: DeviceStatus? {
+        didSet { if let status { config = status.settings } }
+    }
     private(set) var config: [String: String] = [:]
     private(set) var catalog: [String: SettingSpec] = [:]
     private(set) var fingers = FingerInventory.empty
@@ -133,11 +135,10 @@ final class DeviceStore {
         }
         if catalog.isEmpty { await loadCatalog() }
         await refreshHelper()
+        // Each device command pauses the HID helper, so read only what the
+        // menu and General need; other tabs load their own data.
         guard await resolvePort() else { return }
-        await refreshStatus()
-        await refreshConfig()
         await refreshFingers()
-        await refreshHosts()
         await refreshLayout()
     }
 
@@ -187,13 +188,6 @@ final class DeviceStore {
             status = try await readStatus(port)
         } catch {
             report(error)
-        }
-    }
-
-    func refreshConfig() async {
-        guard let result = await device(["config", "--json"], quiet: true) else { return }
-        if let values = try? JSONDecoder().decode([String: String].self, from: Data(result.stdout.utf8)) {
-            config = values
         }
     }
 
@@ -256,11 +250,10 @@ final class DeviceStore {
             let step = changes.count > 1 ? "Change \(index + 1) of \(changes.count)" : nil
             let title = SettingTitles.title(for: change.name).lowercased()
             guard await device(["config", change.name, change.value], approval: "Save \(title)", step: step) != nil else {
-                await refreshConfig()
+                await refreshStatus()
                 return false
             }
         }
-        await refreshConfig()
         await refreshStatus()
         lastMessage = changes.count == 1 ? "Setting saved." : "\(changes.count) settings saved."
         return true
@@ -286,7 +279,7 @@ final class DeviceStore {
     func applyPreset(_ preset: LEDPreset) async {
         guard await device(["led", "preset", preset.rawValue], approval: "Apply \(preset.title) lighting") != nil else { return }
         lastMessage = "\(preset.title) lighting applied."
-        await refreshConfig()
+        await refreshStatus()
     }
 
     func preview(color: LEDColor, effect: LEDEffect, durationMs: Int) async {

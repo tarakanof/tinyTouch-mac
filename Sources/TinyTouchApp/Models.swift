@@ -36,6 +36,34 @@ struct DeviceStatus: Sendable {
     var ota: String { raw["ota"] ?? "idle" }
     var ledSync: String { raw["led_sync"] ?? "" }
     var supportsCustomConfig: Bool { raw["custom_config"] == "1" }
+
+    private static let colorNames = ["off", "blue", "green", "cyan", "red", "purple", "yellow", "white"]
+    private static let effectNames = [1: "breathe", 2: "flash", 3: "steady", 5: "fade-in", 6: "fade-out"]
+    private static let settingKeys = [
+        "mode", "led", "piv_delay_ms", "typing_delay_ms", "submit_enter", "touch_cooldown_ms",
+        "led_idle_color", "led_success_color", "led_failure_color", "led_idle_end_color",
+        "led_idle_effect", "led_idle_cycles", "led_feedback_ms", "piv_auto_type",
+    ]
+
+    /// Settings named as `tinytouch config` reports them, decoded from raw status
+    /// so reading them doesn't need a second device command.
+    var settings: [String: String] {
+        var values: [String: String] = [:]
+        for key in Self.settingKeys {
+            guard let value = raw[key] else { continue }
+            switch key {
+            case "submit_enter", "piv_auto_type":
+                values[key] = value == "1" ? "on" : "off"
+            case let color where color.hasSuffix("_color"):
+                values[key] = Int(value).flatMap { Self.colorNames[safe: $0] } ?? value
+            case "led_idle_effect":
+                values[key] = Int(value).flatMap { Self.effectNames[$0] } ?? value
+            default:
+                values[key] = value
+            }
+        }
+        return values
+    }
 }
 
 enum JSONScalar: Decodable, Sendable, CustomStringConvertible {

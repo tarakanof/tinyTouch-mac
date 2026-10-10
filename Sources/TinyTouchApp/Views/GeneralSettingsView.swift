@@ -238,7 +238,7 @@ struct GeneralSettingsView: View {
 
     private func modeMessage(_ mode: DeviceMode) -> String {
         var message = "You'll need to unplug and reconnect tinyTouch afterward."
-        if mode == .hid, store.hosts.identifiers.isEmpty {
+        if mode == .hid, store.status?.hosts == 0 {
             message += " This Mac isn't registered for password entry yet — run setup after switching."
         }
         if mode == .piv, store.status?.pivReady != true {

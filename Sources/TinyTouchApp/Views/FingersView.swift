@@ -27,7 +27,6 @@ struct FingersView: View {
             }
         }
         .formStyle(.grouped)
-        .task(id: store.port) { await store.refreshFingers() }
         .sheet(item: Binding(
             get: { store.enrollment.map { EnrollmentID(finger: $0.finger) } },
             set: { if $0 == nil { store.cancelEnrollment() } }

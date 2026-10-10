@@ -59,3 +59,19 @@ private func lines(_ text: String) -> [String] {
     #expect(catalog["typing_delay_ms"]?.defaultValue.description == "1")
     #expect(catalog["mode"]?.defaultValue.description == "piv")
 }
+
+@Test func decodesSettingsFromRawStatus() {
+    let status = DeviceStatus(raw: [
+        "led": "on", "led_idle_color": "1", "led_success_color": "2", "led_failure_color": "4",
+        "led_idle_end_color": "6", "led_idle_effect": "3", "submit_enter": "1", "piv_auto_type": "0",
+        "typing_delay_ms": "7", "firmware": "0.1.35",
+    ])
+    #expect(status.settings["led_idle_color"] == "blue")
+    #expect(status.settings["led_failure_color"] == "red")
+    #expect(status.settings["led_idle_end_color"] == "yellow")
+    #expect(status.settings["led_idle_effect"] == "steady")
+    #expect(status.settings["submit_enter"] == "on")
+    #expect(status.settings["piv_auto_type"] == "off")
+    #expect(status.settings["typing_delay_ms"] == "7")
+    #expect(status.settings["firmware"] == nil)
+}
