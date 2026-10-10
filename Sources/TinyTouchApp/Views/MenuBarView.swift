@@ -31,7 +31,7 @@ struct MenuBarView: View {
                     show(.fingers)
                 }
                 .disabled(store.port == nil)
-                MenuRow(title: "Refresh", symbol: "arrow.clockwise") {
+                MenuRow(title: "Refresh", symbol: "arrow.clockwise", closesMenu: false) {
                     Task { await store.refreshAll() }
                 }
                 .disabled(store.isBusy)
@@ -44,7 +44,7 @@ struct MenuBarView: View {
             }
         }
         .padding(12)
-        .frame(width: 300)
+        .frame(width: 250)
     }
 
     private var header: some View {
@@ -117,14 +117,21 @@ private struct MenuRow: View {
     let title: String
     let symbol: String
     var shortcut: KeyEquivalent?
+    var closesMenu = true
     let action: () -> Void
 
+    @Environment(\.dismiss) private var dismiss
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            HStack {
-                Label(title, systemImage: symbol)
+        Button {
+            if closesMenu { dismiss() }
+            action()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .frame(width: 18)
+                Text(title)
                 Spacer()
                 if let shortcut {
                     Text("⌘\(String(shortcut.character).uppercased())")
