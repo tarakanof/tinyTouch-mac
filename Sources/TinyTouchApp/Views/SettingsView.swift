@@ -8,22 +8,26 @@ struct SettingsView: View {
         TabView(selection: $store.settingsTab) {
             Tab("General", systemImage: "gearshape", value: SettingsTab.general) {
                 DeviceGate { GeneralSettingsView() }
+                    .frame(height: 735)
             }
             Tab("Lighting", systemImage: "lightbulb", value: SettingsTab.lighting) {
                 DeviceGate { LightingSettingsView() }
+                    .frame(height: 750)
             }
             Tab("Fingerprints", systemImage: "touchid", value: SettingsTab.fingers) {
                 DeviceGate { FingersView() }
+                    .frame(height: 560)
             }
             Tab("Computers", systemImage: "laptopcomputer", value: SettingsTab.computers) {
                 DeviceGate { ComputersView() }
+                    .frame(height: 360)
             }
             Tab("Maintenance", systemImage: "wrench.and.screwdriver", value: SettingsTab.maintenance) {
                 MaintenanceView()
+                    .frame(height: 640)
             }
         }
-        .frame(width: 560)
-        .frame(minHeight: 570)
+        .frame(width: 500)
         .sheet(item: Binding(
             get: { store.touchPrompt.map(IdentifiedPrompt.init) },
             set: { if $0 == nil { store.cancelApproval() } }
