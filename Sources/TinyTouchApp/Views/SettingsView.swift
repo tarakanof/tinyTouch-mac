@@ -23,7 +23,7 @@ struct SettingsView: View {
             }
         }
         .frame(width: 560)
-        .frame(minHeight: 460)
+        .frame(minHeight: 570)
         .sheet(item: Binding(
             get: { store.touchPrompt.map(IdentifiedPrompt.init) },
             set: { if $0 == nil { store.cancelApproval() } }
