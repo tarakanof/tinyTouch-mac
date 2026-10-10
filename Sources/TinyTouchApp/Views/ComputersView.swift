@@ -11,7 +11,7 @@ struct ComputersView: View {
                     ContentUnavailableView {
                         Label("No Registered Computers", systemImage: "laptopcomputer.slash")
                     } description: {
-                        Text("Password entry needs this Mac to be registered. Run HID setup to add it.")
+                        Text("Run password entry setup to register this Mac.")
                     } actions: {
                         Button("Set Up This Mac…") {
                             store.openInTerminal(["setup", "--mode", "hid", "--skip-enroll"])
@@ -19,30 +19,30 @@ struct ComputersView: View {
                     }
                 } else {
                     ForEach(store.hosts.identifiers, id: \.self) { identifier in
-                        HStack(spacing: 12) {
-                            Image(systemName: "laptopcomputer")
-                                .font(.title2)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 28)
+                        HStack(spacing: 10) {
+                            SettingIcon(symbol: "laptopcomputer", color: .blue)
                             Text(identifier)
                                 .font(.body.monospaced())
                                 .textSelection(.enabled)
                             Spacer()
-                            Button("Remove…", role: .destructive) {
+                            Button("Remove", systemImage: "trash", role: .destructive) {
                                 pendingRemoval = identifier
                             }
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(.red)
+                            .help("Remove this computer")
                         }
                     }
                 }
             } header: {
-                HStack {
-                    Text("Password Entry Computers")
-                    Spacer()
+                SectionHeader(
+                    title: "Password Entry Computers",
+                    help: "Each Mac keeps its own password and pairing key in its login Keychain. To add another Mac, install tinytouch there and run password entry setup."
+                ) {
                     Text("\(store.hosts.identifiers.count) of \(store.hosts.capacity)")
                         .foregroundStyle(.secondary)
+                    RefreshButton { await store.refreshHosts() }
                 }
-            } footer: {
-                Text("Each Mac keeps its own password and pairing key in its login Keychain. To add another Mac, install tinytouch there and run HID setup.")
             }
         }
         .formStyle(.grouped)

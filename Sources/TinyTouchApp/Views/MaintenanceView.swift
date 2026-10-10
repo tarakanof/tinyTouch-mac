@@ -7,47 +7,85 @@ struct MaintenanceView: View {
 
     var body: some View {
         Form {
-            Section("Software") {
-                LabeledContent("tinytouch CLI", value: store.cliVersion.isEmpty ? "—" : store.cliVersion)
-                LabeledContent("Firmware", value: store.status?.firmware ?? "—")
+            Section {
+                LabeledContent {
+                    Text(store.cliVersion.isEmpty ? "—" : store.cliVersion).foregroundStyle(.secondary)
+                } label: {
+                    SettingLabel(title: "tinytouch CLI", symbol: "terminal.fill", color: .gray)
+                }
+                LabeledContent {
+                    Text(store.status?.firmware ?? "—").foregroundStyle(.secondary)
+                } label: {
+                    SettingLabel(title: "Firmware", symbol: "memorychip.fill", color: .gray)
+                }
                 LabeledContent {
                     Button("Update…") { store.openInTerminal(["update"]) }
                 } label: {
-                    Text("Check for updates")
-                    Text("Updates the CLI, helper, and firmware in Terminal.")
+                    SettingLabel(
+                        title: "Software update",
+                        symbol: "arrow.down.circle.fill",
+                        color: .blue,
+                        info: "Updates the CLI, background helper and device firmware in Terminal. Reconnect tinyTouch when it finishes."
+                    )
                 }
+            } header: {
+                SectionHeader("Software")
             }
 
-            Section("Connection") {
-                Picker("Device port", selection: Binding(
-                    get: { store.port ?? store.preferredPort ?? "" },
-                    set: { port in
-                        store.preferredPort = port
-                        Task { await store.refreshAll() }
+            Section {
+                LabeledContent {
+                    Picker("Device port", selection: Binding(
+                        get: { store.port ?? store.preferredPort ?? "" },
+                        set: { port in
+                            store.preferredPort = port
+                            Task { await store.refreshAll() }
+                        }
+                    )) {
+                        if store.availablePorts.isEmpty {
+                            Text("None").tag("")
+                        }
+                        ForEach(store.availablePorts, id: \.self) { port in
+                            Text(port.replacingOccurrences(of: "/dev/cu.", with: "")).tag(port)
+                        }
                     }
-                )) {
-                    if store.availablePorts.isEmpty {
-                        Text("None").tag("")
-                    }
-                    ForEach(store.availablePorts, id: \.self) { port in
-                        Text(port.replacingOccurrences(of: "/dev/cu.", with: "")).tag(port)
-                    }
+                    .labelsHidden()
+                    .fixedSize()
+                } label: {
+                    SettingLabel(title: "Device port", symbol: "cable.connector", color: .gray)
                 }
-                LabeledContent("HID helper") {
+                LabeledContent {
                     HStack {
-                        Text(store.helperRunning ? "Running" : "Not running")
-                            .foregroundStyle(.secondary)
+                        StatusBadge(
+                            text: store.helperRunning ? "Running" : "Not running",
+                            color: store.helperRunning ? .green : .secondary
+                        )
                         Button("Repair") { Task { await store.repairHelper() } }
-                        Button("Remove…") { confirmUninstall = true }
+                        Button("Remove", systemImage: "trash", role: .destructive) { confirmUninstall = true }
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(.red)
                             .disabled(!store.helperRunning)
+                            .help("Remove the HID helper")
                     }
+                } label: {
+                    SettingLabel(
+                        title: "HID helper",
+                        symbol: "gearshape.2.fill",
+                        color: .gray,
+                        info: "Repair reinstalls the helper and re-authorizes Keychain access. Saved passwords are kept."
+                    )
                 }
                 LabeledContent {
                     Button("Run Setup…") { store.openInTerminal(["setup"]) }
                 } label: {
-                    Text("Setup")
-                    Text("Registers this Mac and pairs the smart card identity.")
+                    SettingLabel(
+                        title: "Setup",
+                        symbol: "wand.and.stars",
+                        color: .purple,
+                        info: "Registers this Mac for password entry or pairs the smart card identity, in Terminal."
+                    )
                 }
+            } header: {
+                SectionHeader("Connection")
             }
 
             Section {
@@ -59,38 +97,35 @@ struct MaintenanceView: View {
                         HStack(spacing: 10) {
                             Image(systemName: event.symbol)
                                 .foregroundStyle(event.tint)
-                                .frame(width: 20)
+                                .frame(width: 22)
                             Text(event.title)
                             Spacer()
                             Text(event.uptimeText)
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
-                                .help("Time since the device started")
                         }
                     }
                 }
             } header: {
-                HStack {
-                    Text("Recent Activity")
-                    Spacer()
-                    Button {
-                        Task { await store.refreshLogs() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .disabled(store.port == nil || store.isBusy)
+                SectionHeader(
+                    title: "Recent Activity",
+                    help: "The last 32 events stored on the device. Times count from when the device started."
+                ) {
+                    RefreshButton { await store.refreshLogs() }
                 }
             }
 
             Section {
                 LabeledContent {
-                    Button("Factory Reset…", role: .destructive) { confirmReset = true }
+                    Button("Reset…", role: .destructive) { confirmReset = true }
                         .disabled(store.port == nil)
                 } label: {
-                    Text("Factory reset")
-                    Text("Erases fingerprints, keys, registered computers, and settings.")
+                    SettingLabel(
+                        title: "Factory reset",
+                        symbol: "exclamationmark.triangle.fill",
+                        color: .red,
+                        info: "Erases fingerprints, keys, registered computers and settings on the device."
+                    )
                 }
             }
         }

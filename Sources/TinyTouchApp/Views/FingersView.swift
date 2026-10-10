@@ -16,20 +16,14 @@ struct FingersView: View {
                     )
                 }
             } header: {
-                HStack {
-                    Text("Fingerprints")
-                    Spacer()
-                    Button {
-                        Task { await store.refreshFingers() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .disabled(store.isBusy)
+                SectionHeader(
+                    title: "Fingerprints",
+                    help: "Each finger is scanned from four angles: left edge, right edge, top and center. Enrolling, replacing or deleting needs a touch from a finger that's already enrolled."
+                ) {
+                    Text("\(store.fingers.enrolledCount) of 10")
+                        .foregroundStyle(.secondary)
+                    RefreshButton { await store.refreshFingers() }
                 }
-            } footer: {
-                Text("Each finger is scanned from four angles. Changes need a touch from an already enrolled finger.")
             }
         }
         .formStyle(.grouped)
@@ -91,59 +85,41 @@ private struct FingerRow: View {
     let delete: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: finger.isOccupied ? "touchid" : "circle.dashed")
-                .font(.title2)
-                .foregroundStyle(finger.state == .enrolled ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Finger \(finger.number)")
-                Text(stateText)
-                    .font(.caption)
-                    .foregroundStyle(stateIsWarning ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
-            }
+        HStack(spacing: 10) {
+            SettingIcon(
+                symbol: finger.isOccupied ? "touchid" : "plus",
+                color: finger.isOccupied ? badge.color : .gray.opacity(0.6)
+            )
+            Text("Finger \(finger.number)")
+            StatusBadge(text: badge.text, color: badge.color, symbol: badge.symbol)
             Spacer()
             if finger.isOccupied {
-                Menu {
-                    Button("Replace…", systemImage: "arrow.triangle.2.circlepath", action: enroll)
-                    Divider()
-                    Button("Delete…", systemImage: "trash", role: .destructive, action: delete)
-                } label: {
-                    Label("Actions", systemImage: "ellipsis")
-                }
-                .menuStyle(.button)
-                .menuIndicator(.hidden)
-                .buttonStyle(.borderless)
-                .labelStyle(.iconOnly)
-                .fixedSize()
-                .help("Finger actions")
+                Button("Replace", systemImage: "arrow.triangle.2.circlepath", action: enroll)
+                    .help("Scan this finger again")
+                Button("Delete", systemImage: "trash", role: .destructive, action: delete)
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.red)
+                    .help("Delete finger \(finger.number)")
             } else {
-                Button("Enroll…", action: enroll)
+                Button("Enroll", systemImage: "plus", action: enroll)
             }
         }
         .contextMenu {
             if finger.isOccupied {
-                Button("Replace…", action: enroll)
-                Button("Delete…", role: .destructive, action: delete)
+                Button("Replace…", systemImage: "arrow.triangle.2.circlepath", action: enroll)
+                Button("Delete…", systemImage: "trash", role: .destructive, action: delete)
             } else {
-                Button("Enroll…", action: enroll)
+                Button("Enroll…", systemImage: "plus", action: enroll)
             }
         }
     }
 
-    private var stateText: String {
+    private var badge: (text: String, color: Color, symbol: String?) {
         switch finger.state {
-        case .empty: "Not enrolled"
-        case .enrolled: "Enrolled · 4 views"
-        case .partial(let views): "Partially enrolled · \(views) of 4 views"
-        case .cleanupPending: "Cleanup pending — reconnect the device"
-        }
-    }
-
-    private var stateIsWarning: Bool {
-        switch finger.state {
-        case .partial, .cleanupPending: true
-        default: false
+        case .empty: ("Not enrolled", .secondary, nil)
+        case .enrolled: ("Enrolled", .green, "checkmark")
+        case .partial(let views): ("Partial · \(views)/4", .orange, "exclamationmark.triangle.fill")
+        case .cleanupPending: ("Reconnect to clean up", .orange, "exclamationmark.triangle.fill")
         }
     }
 }

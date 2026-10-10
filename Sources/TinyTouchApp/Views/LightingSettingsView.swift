@@ -12,13 +12,22 @@ struct LightingSettingsView: View {
         VStack(spacing: 0) {
             Form {
                 Section {
-                    Picker("Sensor lighting", selection: draft.string("led")) {
-                        ForEach(LEDMode.allCases) { mode in
-                            Text(mode.title).tag(mode.rawValue)
+                    LabeledContent {
+                        Picker("Sensor lighting", selection: draft.string("led")) {
+                            ForEach(LEDMode.allCases) { mode in
+                                Text(mode.title).tag(mode.rawValue)
+                            }
                         }
+                        .labelsHidden()
+                        .fixedSize()
+                    } label: {
+                        SettingLabel(
+                            title: "Sensor lighting",
+                            symbol: "lightbulb.fill",
+                            color: .yellow,
+                            info: "Fingerprint matching works in every lighting mode. Off also disables match and no-match feedback."
+                        )
                     }
-                } footer: {
-                    Text("Fingerprint matching works in every lighting mode.")
                 }
 
                 if store.status?.supportsCustomConfig == true {
@@ -43,31 +52,48 @@ struct LightingSettingsView: View {
     }
 
     private var idleSection: some View {
-        Section("Idle") {
-            LabeledContent("Color") {
+        Section {
+            LabeledContent {
                 ColorSwatchPicker(selection: draft.string("led_idle_color"))
+            } label: {
+                SettingLabel(title: "Color", symbol: "paintpalette.fill", color: .blue)
             }
-            Picker("Effect", selection: draft.string("led_idle_effect")) {
-                ForEach(LEDEffect.allCases) { effect in
-                    Text(effect.title).tag(effect.rawValue)
+            LabeledContent {
+                Picker("Effect", selection: draft.string("led_idle_effect")) {
+                    ForEach(LEDEffect.allCases) { effect in
+                        Text(effect.title).tag(effect.rawValue)
+                    }
                 }
+                .labelsHidden()
+                .fixedSize()
+            } label: {
+                SettingLabel(title: "Effect", symbol: "waveform.path", color: .purple)
             }
             if draft.values["led_idle_effect"] == LEDEffect.breathe.rawValue {
-                LabeledContent("Breathe to") {
+                LabeledContent {
                     ColorSwatchPicker(selection: draft.string("led_idle_end_color"))
+                } label: {
+                    SettingLabel(
+                        title: "Breathe to",
+                        symbol: "arrow.left.and.right",
+                        color: .mint,
+                        info: "Breathing fades between the idle color and this color."
+                    )
                 }
             }
             if draft.values["led_idle_effect"] != LEDEffect.steady.rawValue {
                 NumberSettingRow(
                     title: "Repeats",
-                    help: "0 repeats the animation continuously.",
+                    symbol: "repeat",
+                    color: .gray,
+                    info: "How many times the animation plays. 0 repeats it continuously.",
                     unit: "×",
                     value: draft.int("led_idle_cycles", in: 0...255),
                     range: 0...255
                 )
             }
             LabeledContent {
-                Button("Preview") {
+                Button("Preview", systemImage: "play.fill") {
                     Task {
                         await store.preview(
                             color: LEDColor(rawValue: draft.values["led_idle_color"] ?? "") ?? .blue,
@@ -77,26 +103,41 @@ struct LightingSettingsView: View {
                     }
                 }
             } label: {
-                Text("Try on device")
-                Text("Shows the idle look briefly without saving it.")
+                SettingLabel(
+                    title: "Try on device",
+                    symbol: "eye.fill",
+                    color: .teal,
+                    info: "Shows the selected idle color and effect on the sensor for a moment without saving them."
+                )
             }
+        } header: {
+            SectionHeader("Idle")
         }
     }
 
     private var feedbackSection: some View {
-        Section("Authentication Feedback") {
-            LabeledContent("Match") {
+        Section {
+            LabeledContent {
                 ColorSwatchPicker(selection: draft.string("led_success_color"))
+            } label: {
+                SettingLabel(title: "Match", symbol: "checkmark", color: .green)
             }
-            LabeledContent("No match") {
+            LabeledContent {
                 ColorSwatchPicker(selection: draft.string("led_failure_color"))
+            } label: {
+                SettingLabel(title: "No match", symbol: "xmark", color: .red)
             }
             NumberSettingRow(
                 title: "Duration",
+                symbol: "timer",
+                color: .orange,
+                info: "How long the match or no-match color shows. Authentication continues meanwhile.",
                 value: draft.int("led_feedback_ms", in: range("led_feedback_ms")),
                 range: range("led_feedback_ms"),
                 step: 50
             )
+        } header: {
+            SectionHeader("Authentication Feedback")
         }
     }
 
@@ -119,9 +160,10 @@ struct LightingSettingsView: View {
             }
             .padding(.vertical, 4)
         } header: {
-            Text("Themes")
-        } footer: {
-            Text("A theme sets all colors and the idle effect in one approval.")
+            SectionHeader(
+                "Themes",
+                help: "A theme sets all colors and the idle effect at once, with a single touch. Lighting mode and feedback duration are kept."
+            )
         }
     }
 

@@ -55,7 +55,9 @@ final class SettingsDraft {
 
 struct NumberSettingRow: View {
     let title: String
-    var help: String?
+    let symbol: String
+    let color: Color
+    var info: String?
     var unit = "ms"
     @Binding var value: Int
     let range: ClosedRange<Int>
@@ -74,10 +76,7 @@ struct NumberSettingRow: View {
                     .labelsHidden()
             }
         } label: {
-            Text(title)
-            if let help {
-                Text(help)
-            }
+            SettingLabel(title: title, symbol: symbol, color: color, info: info)
         }
     }
 }
