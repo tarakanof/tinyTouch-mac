@@ -12,12 +12,16 @@ curl -fsSL https://github.com/ZimengXiong/tinyTouch/releases/latest/download/ins
 Requires Xcode 27 (the SwiftUI macros are not part of the Command Line Tools).
 
 ```sh
-./build-app.sh                         # builds dist/tinyTouch.app, ad-hoc signed
+./build-app.sh                         # builds dist/tinyTouch.app
 cp -R dist/tinyTouch.app /Applications/
 swift test                             # parser tests
 ```
 
-`build-app.sh` uses `/Applications/Xcode.app` when `DEVELOPER_DIR` is unset.
+`build-app.sh` uses `/Applications/Xcode.app` when `DEVELOPER_DIR` is unset. It signs
+with your first Developer ID or Apple Development identity (override with
+`SIGN_IDENTITY`), or ad-hoc when none exists. macOS remembers menu bar permission
+for ad-hoc signed apps by path, so an ad-hoc copy moved to `/Applications` can
+start with a hidden menu bar icon.
 
 ## Usage
 

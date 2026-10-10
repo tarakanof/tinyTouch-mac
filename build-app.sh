@@ -20,6 +20,11 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/TinyTouchApp" "$app/Contents/MacOS/TinyTouchApp"
 cp Resources/AppIcon.icns "$app/Contents/Resources/"
 sed -e "s/__VERSION__/$version/" -e "s/__BUILD__/$build/" Resources/Info.plist > "$app/Contents/Info.plist"
-codesign --force --sign - --options runtime "$app"
+# A team identity keeps the menu bar permission valid wherever the app is installed;
+# macOS tracks ad-hoc signed apps by path.
+identity="${SIGN_IDENTITY:-$(security find-identity -p codesigning -v 2>/dev/null |
+  awk -F'"' '/Developer ID Application|Apple Development/ {print $2; exit}')}"
+codesign --force --sign "${identity:--}" --options runtime --timestamp=none "$app"
+echo "Signed with: ${identity:-ad-hoc}"
 
 echo "Built $(pwd)/$app"
