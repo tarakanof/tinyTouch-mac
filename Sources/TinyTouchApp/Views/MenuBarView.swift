@@ -1,0 +1,223 @@
+import SwiftUI
+
+struct MenuBarView: View {
+    @Environment(DeviceStore.self) private var store
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+
+            if let prompt = store.touchPrompt {
+                TouchPromptCard(prompt: prompt)
+            } else if store.enrollment != nil {
+                Label("Enrollment in progress", systemImage: "touchid")
+                    .foregroundStyle(.secondary)
+            }
+
+            if let status = store.status {
+                details(status)
+            } else {
+                DisconnectedMessage()
+            }
+
+            Divider()
+
+            VStack(spacing: 2) {
+                MenuRow(title: "Settings…", symbol: "gearshape", shortcut: ",") {
+                    show(.general)
+                }
+                MenuRow(title: "Fingerprints…", symbol: "touchid") {
+                    show(.fingers)
+                }
+                .disabled(store.port == nil)
+                MenuRow(title: "Refresh", symbol: "arrow.clockwise") {
+                    Task { await store.refreshAll() }
+                }
+                .disabled(store.isBusy)
+            }
+
+            Divider()
+
+            MenuRow(title: "Quit tinyTouch", symbol: "power", shortcut: "q") {
+                NSApp.terminate(nil)
+            }
+        }
+        .padding(12)
+        .frame(width: 300)
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "touchid")
+                .font(.title2)
+                .foregroundStyle(.tint)
+                .frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("tinyTouch")
+                    .font(.headline)
+                ConnectionBadge()
+            }
+            Spacer()
+            if store.isBusy {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func details(_ status: DeviceStatus) -> some View {
+        VStack(spacing: 6) {
+            DetailRow(title: "Mode", value: status.mode?.title ?? "Unknown")
+            DetailRow(
+                title: "Fingerprints",
+                value: store.fingers.enrolledCount == 1 ? "1 finger" : "\(store.fingers.enrolledCount) fingers"
+            )
+            if status.mode == .hid {
+                DetailRow(title: "HID helper", value: store.helperRunning ? "Running" : "Not running",
+                          warning: !store.helperRunning)
+            } else {
+                DetailRow(title: "Smart card", value: status.pivReady ? "Ready" : "Not configured",
+                          warning: !status.pivReady)
+            }
+            DetailRow(title: "Firmware", value: status.firmware)
+        }
+        .font(.callout)
+    }
+
+    private func show(_ tab: SettingsTab) {
+        store.settingsTab = tab
+        openSettings()
+        NSApp.activate()
+    }
+}
+
+private struct DetailRow: View {
+    let title: String
+    let value: String
+    var warning = false
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if warning {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .imageScale(.small)
+            }
+            Text(value)
+        }
+    }
+}
+
+private struct MenuRow: View {
+    let title: String
+    let symbol: String
+    var shortcut: KeyEquivalent?
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Label(title, systemImage: symbol)
+                Spacer()
+                if let shortcut {
+                    Text("⌘\(String(shortcut.character).uppercased())")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .contentShape(.rect)
+            .background(hovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+                        in: .rect(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .modifier(OptionalShortcut(key: shortcut))
+    }
+}
+
+private struct OptionalShortcut: ViewModifier {
+    let key: KeyEquivalent?
+
+    func body(content: Content) -> some View {
+        if let key {
+            content.keyboardShortcut(key, modifiers: .command)
+        } else {
+            content
+        }
+    }
+}
+
+struct ConnectionBadge: View {
+    @Environment(DeviceStore.self) private var store
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var text: String {
+        switch store.connection {
+        case .noCLI: "CLI not installed"
+        case .searching: "Looking for device…"
+        case .disconnected: "Not connected"
+        case .connected(let port): "Connected · \(port.replacingOccurrences(of: "/dev/cu.", with: ""))"
+        case .failed: "Connection error"
+        }
+    }
+
+    private var color: Color {
+        switch store.connection {
+        case .connected: .green
+        case .searching: .yellow
+        default: .secondary
+        }
+    }
+}
+
+struct DisconnectedMessage: View {
+    @Environment(DeviceStore.self) private var store
+
+    var body: some View {
+        switch store.connection {
+        case .noCLI:
+            ContentUnavailableView {
+                Label("Install the tinytouch CLI", systemImage: "terminal")
+            } description: {
+                Text("This app uses the tinytouch command-line tool to talk to your device.")
+            } actions: {
+                Button("Copy Install Command") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(
+                        "curl -fsSL https://github.com/ZimengXiong/tinyTouch/releases/latest/download/install.sh | sh",
+                        forType: .string
+                    )
+                }
+                Button("Check Again") {
+                    Task { await store.relocateCLI() }
+                }
+            }
+        case .failed(let message):
+            ContentUnavailableView("Can't reach tinyTouch", systemImage: "exclamationmark.triangle",
+                                   description: Text(message))
+        case .searching:
+            ContentUnavailableView("Looking for tinyTouch…", systemImage: "cable.connector")
+        default:
+            ContentUnavailableView("tinyTouch isn't connected", systemImage: "cable.connector.slash",
+                                   description: Text("Connect it with a USB data cable."))
+        }
+    }
+}
