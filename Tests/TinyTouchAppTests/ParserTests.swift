@@ -93,3 +93,14 @@ private func lines(_ text: String) -> [String] {
     #expect(names(.device) == ["usb_attached"])
     #expect(events.first { $0.name == "hid_typing" }?.title == "Typing password")
 }
+
+@Test func parsesHostListWithThisMac() {
+    let hosts = HostList.parse([
+        "HID computers (2 of 8):",
+        "  0123456789abcdef",
+        "  fedcba9876543210  (this Mac)",
+    ])
+    #expect(hosts.capacity == 8)
+    #expect(hosts.identifiers == ["0123456789abcdef", "fedcba9876543210"])
+    #expect(hosts.local == "fedcba9876543210")
+}

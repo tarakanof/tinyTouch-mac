@@ -252,16 +252,21 @@ struct FingerInventory: Sendable {
 struct HostList: Sendable {
     var identifiers: [String]
     var capacity: Int
+    var local: String?
 
-    /// Parses `tinytouch computers`, e.g. "HID computers (1 of 8):" followed by IDs.
+    /// Parses `tinytouch computers`, e.g. "HID computers (1 of 8):" followed by IDs,
+    /// with "(this Mac)" after the ID whose pairing key is in this Mac's Keychain.
     static func parse(_ lines: [String]) -> HostList {
         var list = HostList(identifiers: [], capacity: 8)
         for line in lines {
+            let words = line.split(separator: " ")
             if line.hasPrefix("HID computers ("),
-               let capacity = line.split(separator: " ").compactMap({ Int($0.trimmingCharacters(in: CharacterSet(charactersIn: "():"))) }).last {
+               let capacity = words.compactMap({ Int($0.trimmingCharacters(in: CharacterSet(charactersIn: "():"))) }).last {
                 list.capacity = capacity
-            } else if !line.contains(" "), line.allSatisfy(\.isHexDigit) {
-                list.identifiers.append(line)
+            } else if let first = words.first, first.allSatisfy(\.isHexDigit) {
+                let identifier = String(first)
+                list.identifiers.append(identifier)
+                if line.hasSuffix("(this Mac)") { list.local = identifier }
             }
         }
         return list
