@@ -9,42 +9,38 @@ struct AppSettingsView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent {
-                    HStack {
-                        if preferences.loginItemStatus == .requiresApproval {
-                            Button("Allow in System Settings…") { preferences.openLoginItemsSettings() }
+                ToggleRow(
+                    title: "Open at login",
+                    symbol: "power",
+                    color: .green,
+                    isOn: Binding(
+                        get: { preferences.openAtLogin },
+                        set: { enabled in
+                            do { try preferences.setOpenAtLogin(enabled) } catch { self.error = error.localizedDescription }
                         }
-                        Toggle("Open at login", isOn: Binding(
-                            get: { preferences.openAtLogin },
-                            set: { enabled in
-                                do { try preferences.setOpenAtLogin(enabled) } catch { self.error = error.localizedDescription }
-                            }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
-                } label: {
-                    SettingLabel(title: "Open at login", symbol: "power", color: .green)
-                }
-                LabeledContent {
-                    HStack {
-                        if preferences.notificationsDenied {
-                            Button("Open System Settings…") { preferences.openNotificationSettings() }
-                        }
-                        Toggle("Notifications", isOn: Binding(
-                            get: { preferences.notificationsEnabled },
-                            set: { enabled in Task { await preferences.setNotifications(enabled) } }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
-                } label: {
-                    SettingLabel(
-                        title: "Notifications",
-                        symbol: "bell.badge.fill",
-                        color: .red,
-                        info: "Tells you when tinyTouch connects or disconnects, and when password entry stops working. Only while the app is running."
                     )
+                )
+                if preferences.loginItemStatus == .requiresApproval {
+                    LabeledContent("macOS needs your approval to open tinyTouch at login.") {
+                        Button("Open System Settings…") { preferences.openLoginItemsSettings() }
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                ToggleRow(
+                    title: "Notifications",
+                    symbol: "bell.badge.fill",
+                    color: .red,
+                    info: "Tells you when tinyTouch connects or disconnects, and when password entry stops working. Only while the app is running.",
+                    isOn: Binding(
+                        get: { preferences.notificationsEnabled },
+                        set: { enabled in Task { await preferences.setNotifications(enabled) } }
+                    )
+                )
+                if preferences.notificationsDenied {
+                    LabeledContent("Notifications are turned off for tinyTouch in System Settings.") {
+                        Button("Open System Settings…") { preferences.openNotificationSettings() }
+                    }
+                    .foregroundStyle(.secondary)
                 }
             } header: {
                 SectionHeader("Behavior")

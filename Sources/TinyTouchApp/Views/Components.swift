@@ -125,12 +125,9 @@ struct ToggleRow: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        LabeledContent {
-            Toggle(title, isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        } label: {
+        Toggle(isOn: $isOn) {
             SettingLabel(title: title, symbol: symbol, color: color, info: info)
         }
+        .toggleStyle(.switch)
     }
 }
