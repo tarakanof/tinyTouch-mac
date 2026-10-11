@@ -4,10 +4,24 @@ struct ComputersView: View {
     @Environment(DeviceStore.self) private var store
     @State private var pendingRemoval: String?
 
+    private var hosts: HostList { store.hosts ?? HostList(identifiers: [], capacity: 8) }
+
     var body: some View {
         Form {
             Section {
-                if store.hosts.identifiers.isEmpty {
+                if store.hosts == nil {
+                    if store.hostsReadFailed {
+                        LabeledContent("Couldn't read the list from tinyTouch.") {
+                            Button("Try Again") { Task { await store.refreshHosts() } }
+                        }
+                        .foregroundStyle(.secondary)
+                    } else {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading…").foregroundStyle(.secondary)
+                        }
+                    }
+                } else if hosts.identifiers.isEmpty {
                     ContentUnavailableView {
                         Label("No Registered Computers", systemImage: "laptopcomputer.slash")
                     } description: {
@@ -18,7 +32,7 @@ struct ComputersView: View {
                         }
                     }
                 } else {
-                    ForEach(store.hosts.identifiers, id: \.self) { identifier in
+                    ForEach(hosts.identifiers, id: \.self) { identifier in
                         HStack(spacing: 10) {
                             SettingIcon(symbol: "laptopcomputer", color: .blue)
                             Text(identifier)
@@ -39,8 +53,10 @@ struct ComputersView: View {
                     title: "Password Entry Computers",
                     help: "Each Mac keeps its own password and pairing key in its login Keychain. To add another Mac, install tinytouch there and run password entry setup."
                 ) {
-                    Text("\(store.hosts.identifiers.count) of \(store.hosts.capacity)")
-                        .foregroundStyle(.secondary)
+                    if let hosts = store.hosts {
+                        Text("\(hosts.identifiers.count) of \(hosts.capacity)")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -55,7 +71,7 @@ struct ComputersView: View {
                 Task { await store.removeHost(identifier) }
             }
         } message: { _ in
-            Text(store.hosts.identifiers.count == 1
+            Text(hosts.identifiers.count == 1
                  ? "It's the last registered computer, so tinyTouch switches to smart card mode."
                  : "That Mac can no longer receive passwords from tinyTouch until it runs setup again.")
         }

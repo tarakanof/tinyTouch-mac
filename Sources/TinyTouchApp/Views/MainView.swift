@@ -5,6 +5,7 @@ struct MainView: View {
     @Environment(DeviceStore.self) private var store
     @Environment(AppPreferences.self) private var preferences
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.controlActiveState) private var activeState
 
     var body: some View {
         @Bindable var store = store
@@ -18,14 +19,12 @@ struct MainView: View {
                     List(selection: $store.settingsTab) {
                         Section("Device") {
                             ForEach(SettingsTab.device, id: \.self) { tab in
-                                Label(tab.title, systemImage: tab.symbol)
-                                    .tag(tab)
+                                SidebarLabel(tab: tab)
                             }
                         }
                         Section("tinyTouch") {
                             ForEach([SettingsTab.app, .menu, .about], id: \.self) { tab in
-                                Label(tab.title, systemImage: tab.symbol)
-                                    .tag(tab)
+                                SidebarLabel(tab: tab)
                             }
                         }
                     }
@@ -34,12 +33,16 @@ struct MainView: View {
                 } detail: {
                     detail(for: store.settingsTab)
                         .navigationTitle(store.settingsTab.title)
+                        .toolbar(removing: .title)
                         .toolbar {
-                            // Present on every section so the title bar, and the window
-                            // controls in it, keep the same height.
-                            ToolbarItem(placement: .primaryAction) {
-                                RefreshButton { await refresh(store.settingsTab) }
+                            // A toolbar item on every section also keeps the title bar,
+                            // and the window controls in it, at one height.
+                            ToolbarItem(placement: .navigation) {
+                                Text(store.settingsTab.title)
+                                    .font(.title2.weight(.semibold))
+                                    .padding(.leading, 8)
                             }
+                            .sharedBackgroundVisibility(.hidden)
                         }
                 }
             }
@@ -50,6 +53,12 @@ struct MainView: View {
             preferences.mainWindowOpen = true
         }
         .onDisappear { preferences.mainWindowOpen = false }
+        .onChange(of: activeState) {
+            // Picks up changes made outside the app, such as new touches in Activity.
+            if activeState == .key, preferences.hasCompletedSetup, !store.isBusy {
+                Task { await refresh(store.settingsTab) }
+            }
+        }
         .onChange(of: store.isConfigured) {
             // Someone who already set up tinyTouch with the CLI skips the welcome flow.
             if store.isConfigured, !preferences.hasCompletedSetup, store.setupPhase == .idle {
@@ -96,15 +105,28 @@ struct MainView: View {
 
     private func refresh(_ tab: SettingsTab) async {
         switch tab {
+        case .general, .lighting: await store.refreshStatus()
         case .fingers: await store.refreshFingers()
         case .computers: await store.refreshHosts()
         case .activity: await store.refreshLogs()
         case .maintenance: await store.refreshHelper()
-        case .app:
-            preferences.refresh()
-            await preferences.refreshNotificationStatus()
-        case .general, .lighting, .menu, .about: await store.refreshAll()
+        case .app, .menu, .about: break
         }
+    }
+}
+
+private struct SidebarLabel: View {
+    let tab: SettingsTab
+
+    var body: some View {
+        Label {
+            Text(tab.title)
+        } icon: {
+            Image(systemName: tab.symbol)
+                .frame(width: 24, height: 24)
+        }
+        .padding(.vertical, 3)
+        .tag(tab)
     }
 }
 

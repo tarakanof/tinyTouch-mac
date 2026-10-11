@@ -26,20 +26,24 @@ struct ActivityView: View {
                     }
                 }
             } header: {
-                Picker("Show", selection: $category) {
-                    ForEach(DeviceEvent.Category.allCases) { category in
-                        Text(category.title).tag(category)
+                VStack(spacing: 10) {
+                    TextField("Search activity", text: $search, prompt: Text("Search activity"))
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                    Picker("Show", selection: $category) {
+                        ForEach(DeviceEvent.Category.allCases) { category in
+                            Text(category.title).tag(category)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
             } footer: {
                 Text("The last 32 events stored on tinyTouch. Times count from when it started.")
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .searchable(text: $search, placement: .toolbar, prompt: "Search activity")
         .task(id: store.port) { await store.refreshLogs() }
     }
 

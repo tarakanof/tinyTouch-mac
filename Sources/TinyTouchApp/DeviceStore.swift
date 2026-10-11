@@ -60,7 +60,9 @@ final class DeviceStore {
     private(set) var config: [String: String] = [:]
     private(set) var catalog: [String: SettingSpec] = [:]
     private(set) var fingers = FingerInventory.empty
-    private(set) var hosts = HostList(identifiers: [], capacity: 8)
+    /// nil until the list has been read; a failed read keeps the last good list.
+    private(set) var hosts: HostList?
+    private(set) var hostsReadFailed = false
     private(set) var events: [DeviceEvent] = []
     private(set) var keyboardLayout = "auto"
     private(set) var helperRunning = false
@@ -238,8 +240,12 @@ final class DeviceStore {
     }
 
     func refreshHosts() async {
-        guard let result = await device(["computers"], quiet: true) else { return }
+        guard let result = await device(["computers"], quiet: true) else {
+            hostsReadFailed = hosts == nil
+            return
+        }
         hosts = HostList.parse(result.lines)
+        hostsReadFailed = false
     }
 
     func refreshLogs() async {

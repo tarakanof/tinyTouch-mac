@@ -6,13 +6,13 @@ import UserNotifications
 /// Optional rows and shortcuts in the menu bar window.
 enum MenuItem: String, CaseIterable, Identifiable {
     case mode, fingerprints, helper, firmware, port
-    case fingerprintsShortcut, activityShortcut, refresh
+    case fingerprintsShortcut, activityShortcut
 
     var id: String { rawValue }
 
     static let status: [MenuItem] = [.mode, .fingerprints, .helper, .firmware, .port]
-    static let shortcuts: [MenuItem] = [.fingerprintsShortcut, .activityShortcut, .refresh]
-    static let defaults: Set<MenuItem> = [.mode, .fingerprints, .helper, .firmware, .fingerprintsShortcut, .refresh]
+    static let shortcuts: [MenuItem] = [.fingerprintsShortcut, .activityShortcut]
+    static let defaults: Set<MenuItem> = [.mode, .fingerprints, .helper, .firmware, .fingerprintsShortcut]
 
     var title: String {
         switch self {
@@ -23,7 +23,6 @@ enum MenuItem: String, CaseIterable, Identifiable {
         case .port: "USB port"
         case .fingerprintsShortcut: "Fingerprints…"
         case .activityShortcut: "Activity…"
-        case .refresh: "Refresh"
         }
     }
 
@@ -36,7 +35,6 @@ enum MenuItem: String, CaseIterable, Identifiable {
         case .port: "cable.connector"
         case .fingerprintsShortcut: "touchid"
         case .activityShortcut: "list.bullet.rectangle"
-        case .refresh: "arrow.clockwise"
         }
     }
 }

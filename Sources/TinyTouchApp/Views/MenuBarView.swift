@@ -42,12 +42,6 @@ struct MenuBarView: View {
                     }
                     .disabled(store.port == nil)
                 }
-                if preferences.shows(.refresh) {
-                    MenuRow(title: "Refresh", symbol: "arrow.clockwise", closesMenu: false) {
-                        Task { await store.refreshAll() }
-                    }
-                    .disabled(store.isBusy)
-                }
                 MenuRow(title: "Settings…", symbol: "gearshape", shortcut: ",") {
                     show(.app)
                 }
