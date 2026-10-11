@@ -21,8 +21,8 @@ struct AppSettingsView: View {
                     )
                 )
                 if preferences.loginItemStatus == .requiresApproval {
-                    LabeledContent("macOS needs your approval to open tinyTouch at login.") {
-                        Button("Open System Settings…") { preferences.openLoginItemsSettings() }
+                    LabeledContent("Allow tinyTouch in Login Items, then come back.") {
+                        Button("Open Login Items…") { preferences.openLoginItemsSettings() }
                     }
                     .foregroundStyle(.secondary)
                 }
@@ -37,8 +37,8 @@ struct AppSettingsView: View {
                     )
                 )
                 if preferences.notificationsDenied {
-                    LabeledContent("Notifications are turned off for tinyTouch in System Settings.") {
-                        Button("Open System Settings…") { preferences.openNotificationSettings() }
+                    LabeledContent("Turn on Allow notifications for tinyTouch, then come back.") {
+                        Button("Open Notification Settings…") { preferences.openNotificationSettings() }
                     }
                     .foregroundStyle(.secondary)
                 }
@@ -70,6 +70,7 @@ struct AppSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear { preferences.refresh() }
+        .task { await preferences.refreshNotificationStatus() }
         .alert("Couldn't change the setting", isPresented: Binding(
             get: { error != nil },
             set: { if !$0 { error = nil } }

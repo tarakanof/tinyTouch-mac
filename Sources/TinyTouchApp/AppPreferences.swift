@@ -147,6 +147,18 @@ final class AppPreferences {
         notificationsEnabled = granted
     }
 
+    /// Picks up a change made in System Settings › Notifications while the app was in the background.
+    func refreshNotificationStatus() async {
+        let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        let wasDenied = notificationsDenied
+        notificationsDenied = status == .denied
+        if status == .denied {
+            notificationsEnabled = false
+        } else if wasDenied, status == .authorized || status == .provisional {
+            notificationsEnabled = true
+        }
+    }
+
     func notify(_ title: String, _ body: String) {
         guard notificationsEnabled else { return }
         let content = UNMutableNotificationContent()

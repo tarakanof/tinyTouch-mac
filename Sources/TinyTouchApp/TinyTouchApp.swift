@@ -64,6 +64,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainActor.assumeIsolated { store.start() }
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            preferences.refresh()
+            Task { await preferences.refreshNotificationStatus() }
+        }
+    }
+
     /// Opening the app again from Finder or Spotlight shows the main window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         MainActor.assumeIsolated { showMainWindow() }
