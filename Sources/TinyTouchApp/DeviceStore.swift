@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 enum SettingsTab: String, Hashable {
-    case general, lighting, fingers, computers, activity, maintenance, app, about
+    case general, lighting, fingers, computers, activity, maintenance, app, menu, about
 }
 
 enum Connection: Equatable {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @Environment(DeviceStore.self) private var store
+    @Environment(AppPreferences.self) private var preferences
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -16,7 +17,9 @@ struct MenuBarView: View {
             }
 
             if let status = store.status {
-                details(status)
+                if !MenuItem.status.filter(preferences.shows).isEmpty {
+                    details(status)
+                }
             } else {
                 DisconnectedMessage()
             }
@@ -27,14 +30,24 @@ struct MenuBarView: View {
                 MenuRow(title: "Open tinyTouch", symbol: "macwindow", shortcut: "o") {
                     show(nil)
                 }
-                MenuRow(title: "Fingerprints…", symbol: "touchid") {
-                    show(.fingers)
+                if preferences.shows(.fingerprintsShortcut) {
+                    MenuRow(title: "Fingerprints…", symbol: "touchid") {
+                        show(.fingers)
+                    }
+                    .disabled(store.port == nil)
                 }
-                .disabled(store.port == nil)
-                MenuRow(title: "Refresh", symbol: "arrow.clockwise", closesMenu: false) {
-                    Task { await store.refreshAll() }
+                if preferences.shows(.activityShortcut) {
+                    MenuRow(title: "Activity…", symbol: "list.bullet.rectangle") {
+                        show(.activity)
+                    }
+                    .disabled(store.port == nil)
                 }
-                .disabled(store.isBusy)
+                if preferences.shows(.refresh) {
+                    MenuRow(title: "Refresh", symbol: "arrow.clockwise", closesMenu: false) {
+                        Task { await store.refreshAll() }
+                    }
+                    .disabled(store.isBusy)
+                }
                 MenuRow(title: "Settings…", symbol: "gearshape", shortcut: ",") {
                     show(.app)
                 }
@@ -72,19 +85,30 @@ struct MenuBarView: View {
     @ViewBuilder
     private func details(_ status: DeviceStatus) -> some View {
         VStack(spacing: 6) {
-            DetailRow(title: "Mode", value: status.mode?.title ?? "Unknown")
-            DetailRow(
-                title: "Fingerprints",
-                value: store.fingers.enrolledCount == 1 ? "1 finger" : "\(store.fingers.enrolledCount) fingers"
-            )
-            if status.mode == .hid {
-                DetailRow(title: "HID helper", value: store.helperRunning ? "Running" : "Not running",
-                          warning: !store.helperRunning)
-            } else {
-                DetailRow(title: "Smart card", value: status.pivReady ? "Ready" : "Not configured",
-                          warning: !status.pivReady)
+            if preferences.shows(.mode) {
+                DetailRow(title: "Mode", value: status.mode?.title ?? "Unknown")
             }
-            DetailRow(title: "Firmware", value: status.firmware)
+            if preferences.shows(.fingerprints) {
+                DetailRow(
+                    title: "Fingerprints",
+                    value: store.fingers.enrolledCount == 1 ? "1 finger" : "\(store.fingers.enrolledCount) fingers"
+                )
+            }
+            if preferences.shows(.helper) {
+                if status.mode == .hid {
+                    DetailRow(title: "HID helper", value: store.helperRunning ? "Running" : "Not running",
+                              warning: !store.helperRunning)
+                } else {
+                    DetailRow(title: "Smart card", value: status.pivReady ? "Ready" : "Not configured",
+                              warning: !status.pivReady)
+                }
+            }
+            if preferences.shows(.firmware) {
+                DetailRow(title: "Firmware", value: status.firmware)
+            }
+            if preferences.shows(.port), let port = store.port {
+                DetailRow(title: "Port", value: port.replacingOccurrences(of: "/dev/cu.", with: ""))
+            }
         }
         .font(.callout)
     }

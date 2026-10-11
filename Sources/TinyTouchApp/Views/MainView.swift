@@ -23,13 +23,14 @@ struct MainView: View {
                             }
                         }
                         Section("tinyTouch") {
-                            ForEach([SettingsTab.app, .about], id: \.self) { tab in
+                            ForEach([SettingsTab.app, .menu, .about], id: \.self) { tab in
                                 Label(tab.title, systemImage: tab.symbol)
                                     .tag(tab)
                             }
                         }
                     }
                     .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+                    .toolbar(removing: .sidebarToggle)
                 } detail: {
                     detail(for: store.settingsTab)
                         .navigationTitle(store.settingsTab.title)
@@ -88,6 +89,7 @@ struct MainView: View {
         case .activity: DeviceGate { ActivityView() }
         case .maintenance: MaintenanceView()
         case .app: AppSettingsView()
+        case .menu: MenuSettingsView()
         case .about: AboutView()
         }
     }
@@ -99,7 +101,7 @@ struct MainView: View {
         case .computers: { await store.refreshHosts() }
         case .activity: { await store.refreshLogs() }
         case .maintenance: { await store.refreshHelper() }
-        case .app, .about: nil
+        case .app, .menu, .about: nil
         }
     }
 }
@@ -116,6 +118,7 @@ extension SettingsTab {
         case .activity: "Activity"
         case .maintenance: "Maintenance"
         case .app: "Application"
+        case .menu: "Menu"
         case .about: "About"
         }
     }
@@ -128,7 +131,8 @@ extension SettingsTab {
         case .computers: "laptopcomputer"
         case .activity: "list.bullet.rectangle"
         case .maintenance: "wrench.and.screwdriver"
-        case .app: "macwindow"
+        case .app: "switch.2"
+        case .menu: "filemenu.and.cursorarrow"
         case .about: "info.circle"
         }
     }

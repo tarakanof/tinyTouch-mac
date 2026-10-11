@@ -7,16 +7,8 @@ struct AppSettingsView: View {
     @State private var error: String?
 
     var body: some View {
-        @Bindable var preferences = preferences
         Form {
             Section {
-                ToggleRow(
-                    title: "Show in menu bar",
-                    symbol: "menubar.rectangle",
-                    color: .blue,
-                    info: "When off, tinyTouch opens as a regular window and quits when you close it. Password entry keeps working either way, because the background helper runs on its own.",
-                    isOn: $preferences.showInMenuBar
-                )
                 LabeledContent {
                     HStack {
                         if preferences.loginItemStatus == .requiresApproval {

@@ -32,7 +32,7 @@ struct TinyTouchApp: App {
                 .environment(delegate.store)
                 .environment(delegate.preferences)
         } label: {
-            MenuBarIcon(store: delegate.store, delegate: delegate)
+            MenuBarIcon(store: delegate.store, preferences: delegate.preferences, delegate: delegate)
         }
         .menuBarExtraStyle(.window)
     }
@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 private struct MenuBarIcon: View {
     let store: DeviceStore
+    let preferences: AppPreferences
     let delegate: AppDelegate
     @Environment(\.openWindow) private var openWindow
 
@@ -99,7 +100,7 @@ private struct MenuBarIcon: View {
     private var symbol: String {
         switch store.connection {
         case .connected: "touchid"
-        default: "touchid.slash"
+        default: preferences.showsDisconnectedIcon ? "touchid.slash" : "touchid"
         }
     }
 }

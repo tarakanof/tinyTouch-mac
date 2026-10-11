@@ -3,6 +3,44 @@ import Observation
 import ServiceManagement
 import UserNotifications
 
+/// Optional rows and shortcuts in the menu bar window.
+enum MenuItem: String, CaseIterable, Identifiable {
+    case mode, fingerprints, helper, firmware, port
+    case fingerprintsShortcut, activityShortcut, refresh
+
+    var id: String { rawValue }
+
+    static let status: [MenuItem] = [.mode, .fingerprints, .helper, .firmware, .port]
+    static let shortcuts: [MenuItem] = [.fingerprintsShortcut, .activityShortcut, .refresh]
+    static let defaults: Set<MenuItem> = [.mode, .fingerprints, .helper, .firmware, .fingerprintsShortcut, .refresh]
+
+    var title: String {
+        switch self {
+        case .mode: "Mode"
+        case .fingerprints: "Enrolled fingers"
+        case .helper: "Background helper or smart card"
+        case .firmware: "Firmware version"
+        case .port: "USB port"
+        case .fingerprintsShortcut: "Fingerprints…"
+        case .activityShortcut: "Activity…"
+        case .refresh: "Refresh"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .mode: "lock.shield.fill"
+        case .fingerprints: "touchid"
+        case .helper: "gearshape.2.fill"
+        case .firmware: "memorychip.fill"
+        case .port: "cable.connector"
+        case .fingerprintsShortcut: "touchid"
+        case .activityShortcut: "list.bullet.rectangle"
+        case .refresh: "arrow.clockwise"
+        }
+    }
+}
+
 /// App behaviour that belongs to this Mac rather than to the device.
 @MainActor
 @Observable
@@ -16,6 +54,15 @@ final class AppPreferences {
 
     var notificationsEnabled: Bool {
         didSet { UserDefaults.standard.set(notificationsEnabled, forKey: "notifications") }
+    }
+
+    var menuItems: Set<MenuItem> {
+        didSet { UserDefaults.standard.set(menuItems.map(\.rawValue), forKey: "menuItems") }
+    }
+
+    /// Crosses out the menu bar icon while tinyTouch is disconnected.
+    var showsDisconnectedIcon: Bool {
+        didSet { UserDefaults.standard.set(showsDisconnectedIcon, forKey: "showsDisconnectedIcon") }
     }
 
     var hasCompletedSetup: Bool {
@@ -34,9 +81,14 @@ final class AppPreferences {
 
     init() {
         let defaults = UserDefaults.standard
-        defaults.register(defaults: ["showInMenuBar": true, "notifications": false, "hasCompletedSetup": false])
+        defaults.register(defaults: [
+            "showInMenuBar": true, "notifications": false, "hasCompletedSetup": false,
+            "showsDisconnectedIcon": true, "menuItems": MenuItem.defaults.map(\.rawValue),
+        ])
         showInMenuBar = defaults.bool(forKey: "showInMenuBar")
         notificationsEnabled = defaults.bool(forKey: "notifications")
+        menuItems = Set((defaults.stringArray(forKey: "menuItems") ?? []).compactMap(MenuItem.init))
+        showsDisconnectedIcon = defaults.bool(forKey: "showsDisconnectedIcon")
         hasCompletedSetup = defaults.bool(forKey: "hasCompletedSetup")
         // An installed helper means setup already ran, possibly from the CLI.
         if !hasCompletedSetup, FileManager.default.fileExists(atPath: NSHomeDirectory() + "/Library/LaunchAgents/com.tinytouch.helper.plist") {
@@ -55,6 +107,12 @@ final class AppPreferences {
     /// A Dock icon appears while the main window is open, or always when the menu bar icon is off.
     func applyActivationPolicy() {
         NSApp.setActivationPolicy(showInMenuBar && !mainWindowOpen ? .accessory : .regular)
+    }
+
+    func shows(_ item: MenuItem) -> Bool { menuItems.contains(item) }
+
+    func setShows(_ item: MenuItem, _ shown: Bool) {
+        if shown { menuItems.insert(item) } else { menuItems.remove(item) }
     }
 
     // MARK: - Open at login
