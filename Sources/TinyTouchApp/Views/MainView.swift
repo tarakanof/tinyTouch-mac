@@ -35,10 +35,10 @@ struct MainView: View {
                     detail(for: store.settingsTab)
                         .navigationTitle(store.settingsTab.title)
                         .toolbar {
-                            if let refresh = refreshAction(for: store.settingsTab) {
-                                ToolbarItem(placement: .primaryAction) {
-                                    RefreshButton(action: refresh)
-                                }
+                            // Present on every section so the title bar, and the window
+                            // controls in it, keep the same height.
+                            ToolbarItem(placement: .primaryAction) {
+                                RefreshButton { await refresh(store.settingsTab) }
                             }
                         }
                 }
@@ -94,14 +94,16 @@ struct MainView: View {
         }
     }
 
-    private func refreshAction(for tab: SettingsTab) -> (() async -> Void)? {
+    private func refresh(_ tab: SettingsTab) async {
         switch tab {
-        case .general, .lighting: { await store.refreshAll() }
-        case .fingers: { await store.refreshFingers() }
-        case .computers: { await store.refreshHosts() }
-        case .activity: { await store.refreshLogs() }
-        case .maintenance: { await store.refreshHelper() }
-        case .app, .menu, .about: nil
+        case .fingers: await store.refreshFingers()
+        case .computers: await store.refreshHosts()
+        case .activity: await store.refreshLogs()
+        case .maintenance: await store.refreshHelper()
+        case .app:
+            preferences.refresh()
+            await preferences.refreshNotificationStatus()
+        case .general, .lighting, .menu, .about: await store.refreshAll()
         }
     }
 }
