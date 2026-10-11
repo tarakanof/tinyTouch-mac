@@ -38,11 +38,12 @@ authorization again.
   entry or smart card mode, and enrolling a finger. It runs
   `tinytouch --app setup`, which reads the Mac password from stdin and reports
   progress as `@tinytouch {json}` lines.
-- The main window has General, Lighting, Fingerprints, Computers and Maintenance.
-  Device changes are staged and saved with **Apply**; each saved change asks for a
-  touch from an enrolled finger, just like the CLI.
-- **Settings** (⌘,) controls the menu bar icon, opening at login, notifications, and
-  installing the `tinytouch` command into `~/.local/bin`.
+- The main window's sidebar has General, Lighting, Fingerprints, Computers, Activity
+  and Maintenance for the device. Device changes are staged and saved with **Apply**;
+  each saved change asks for a touch from an enrolled finger, just like the CLI.
+- **Application** (⌘,) controls the menu bar icon, opening at login, notifications, and
+  installing the `tinytouch` command into `~/.local/bin`. **About** shows versions,
+  authors and links.
 - With the menu bar icon off, the app shows a Dock icon and quits when its window
   closes. Password entry keeps working, because the background helper runs on its own.
 - If the helper was installed by a standalone CLI, the app moves it onto its bundled
