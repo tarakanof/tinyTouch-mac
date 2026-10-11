@@ -3,54 +3,90 @@ import SwiftUI
 @main
 struct TinyTouchApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
-    @State private var store = DeviceStore()
 
     var body: some Scene {
-        MenuBarExtra {
+        Window("tinyTouch", id: AppDelegate.mainWindow) {
+            MainView()
+                .environment(delegate.store)
+                .environment(delegate.preferences)
+        }
+        .defaultSize(width: 780, height: 680)
+        .defaultLaunchBehavior(delegate.opensWindowAtLaunch ? .presented : .suppressed)
+
+        MenuBarExtra(isInserted: Binding(
+            get: { delegate.preferences.showInMenuBar },
+            set: { delegate.preferences.showInMenuBar = $0 }
+        )) {
             MenuBarView()
-                .environment(store)
+                .environment(delegate.store)
+                .environment(delegate.preferences)
         } label: {
-            MenuBarIcon(store: store, delegate: delegate)
+            MenuBarIcon(store: delegate.store, delegate: delegate)
         }
         .menuBarExtraStyle(.window)
 
         Settings {
-            SettingsView()
-                .environment(store)
+            AppSettingsView()
+                .environment(delegate.store)
+                .environment(delegate.preferences)
         }
         .windowResizability(.contentSize)
     }
 }
 
-/// Opening the app again from Finder or Spotlight shows Settings, since it has no Dock icon.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var showSettings: (@MainActor () -> Void)?
+    static let mainWindow = "main"
+    @MainActor private(set) static weak var shared: AppDelegate?
 
+    @MainActor let preferences = AppPreferences()
+    @MainActor let store = DeviceStore()
+    /// Captured from a live view, since only views can open SwiftUI windows.
+    @MainActor var openWindow: OpenWindowAction?
+
+    @MainActor var opensWindowAtLaunch: Bool {
+        !preferences.showInMenuBar || !preferences.hasCompletedSetup
+            || CommandLine.arguments.contains("--settings")
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            Self.shared = self
+            store.preferences = preferences
+            preferences.applyActivationPolicy()
+        }
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated { store.start() }
+    }
+
+    /// Opening the app again from Finder or Spotlight shows the main window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        MainActor.assumeIsolated { showSettings?() }
+        MainActor.assumeIsolated { showMainWindow() }
         return false
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        MainActor.assumeIsolated { !preferences.showInMenuBar }
+    }
+
+    @MainActor func showMainWindow(tab: SettingsTab? = nil) {
+        if let tab { store.settingsTab = tab }
+        openWindow?(id: Self.mainWindow)
+        NSApp.activate()
     }
 }
 
 private struct MenuBarIcon: View {
     let store: DeviceStore
     let delegate: AppDelegate
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Image(systemName: symbol)
             .symbolEffect(.pulse, isActive: store.touchPrompt != nil || store.enrollment != nil)
             .accessibilityLabel("tinyTouch")
-            .task {
-                delegate.showSettings = {
-                    openSettings()
-                    NSApp.activate()
-                }
-                if CommandLine.arguments.contains("--settings") {
-                    delegate.showSettings?()
-                }
-                store.start()
-            }
+            .task { delegate.openWindow = openWindow }
     }
 
     private var symbol: String {

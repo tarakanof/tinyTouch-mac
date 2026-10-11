@@ -14,7 +14,7 @@ struct ComputersView: View {
                         Text("Run password entry setup to register this Mac.")
                     } actions: {
                         Button("Set Up This Mac…") {
-                            store.openInTerminal(["setup", "--mode", "hid", "--skip-enroll"])
+                            store.setupRequest = .hid
                         }
                     }
                 } else {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @Environment(DeviceStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -24,8 +25,8 @@ struct MenuBarView: View {
             Divider()
 
             VStack(spacing: 2) {
-                MenuRow(title: "Settings…", symbol: "gearshape", shortcut: ",") {
-                    show(.general)
+                MenuRow(title: "Open tinyTouch", symbol: "macwindow", shortcut: "o") {
+                    show(nil)
                 }
                 MenuRow(title: "Fingerprints…", symbol: "touchid") {
                     show(.fingers)
@@ -35,6 +36,10 @@ struct MenuBarView: View {
                     Task { await store.refreshAll() }
                 }
                 .disabled(store.isBusy)
+                MenuRow(title: "Settings…", symbol: "gearshape", shortcut: ",") {
+                    openSettings()
+                    NSApp.activate()
+                }
             }
 
             Divider()
@@ -86,9 +91,9 @@ struct MenuBarView: View {
         .font(.callout)
     }
 
-    private func show(_ tab: SettingsTab) {
-        store.settingsTab = tab
-        openSettings()
+    private func show(_ tab: SettingsTab?) {
+        if let tab { store.settingsTab = tab }
+        openWindow(id: AppDelegate.mainWindow)
         NSApp.activate()
     }
 }
@@ -202,17 +207,10 @@ struct DisconnectedMessage: View {
         switch store.connection {
         case .noCLI:
             ContentUnavailableView {
-                Label("Install the tinytouch CLI", systemImage: "terminal")
+                Label("tinyTouch is incomplete", systemImage: "terminal")
             } description: {
-                Text("This app uses the tinytouch command-line tool to talk to your device.")
+                Text("The command-line tool inside the app is missing. Reinstall tinyTouch.")
             } actions: {
-                Button("Copy Install Command") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(
-                        "curl -fsSL https://github.com/ZimengXiong/tinyTouch/releases/latest/download/install.sh | sh",
-                        forType: .string
-                    )
-                }
                 Button("Check Again") {
                     Task { await store.relocateCLI() }
                 }

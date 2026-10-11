@@ -19,9 +19,15 @@ struct CLIResult: Sendable {
     }
 }
 
-/// Runs the installed `tinytouch` CLI. The CLI owns the serial protocol, the
-/// HID helper lease, and Keychain access, so the app never opens the port itself.
+/// Runs the `tinytouch` CLI bundled in the app, or an installed one during development.
+/// The CLI owns the serial protocol, the HID helper lease, and Keychain access, so the
+/// app never opens the port itself.
 final class CLI: Sendable {
+    static let bundled = Bundle.main.bundleURL
+        .appendingPathComponent("Contents/Resources/tinytouch/tinytouch")
+    static let askpass = Bundle.main.bundleURL
+        .appendingPathComponent("Contents/Helpers/tinytouch-askpass")
+
     static let searchPaths = [
         "\(NSHomeDirectory())/.local/bin/tinytouch",
         "/opt/homebrew/bin/tinytouch",
@@ -35,9 +41,11 @@ final class CLI: Sendable {
         self.executable = executable
     }
 
+    var isBundled: Bool { executable == Self.bundled }
+
     static func locate() -> CLI? {
         let fm = FileManager.default
-        for path in searchPaths where fm.isExecutableFile(atPath: path) {
+        for path in [bundled.path] + searchPaths where fm.isExecutableFile(atPath: path) {
             return CLI(executable: URL(fileURLWithPath: path))
         }
         return nil
@@ -48,22 +56,24 @@ final class CLI: Sendable {
     func run(
         _ arguments: [String],
         input: String? = nil,
+        environment: [String: String] = [:],
         onLine: @escaping @Sendable (String) -> Void = { _ in }
     ) async throws -> CLIResult {
         try await queue.enqueue { [executable] in
-            try await Self.execute(executable, arguments, input: input, onLine: onLine)
+            try await Self.execute(executable, arguments, input: input, environment: environment, onLine: onLine)
         }
     }
 
     /// Runs a command that does not touch the device and may skip the queue.
     func runDetached(_ arguments: [String]) async throws -> CLIResult {
-        try await Self.execute(executable, arguments, input: nil, onLine: { _ in })
+        try await Self.execute(executable, arguments, input: nil, environment: [:], onLine: { _ in })
     }
 
     private static func execute(
         _ executable: URL,
         _ arguments: [String],
         input: String?,
+        environment extra: [String: String],
         onLine: @escaping @Sendable (String) -> Void
     ) async throws -> CLIResult {
         let process = Process()
@@ -73,6 +83,7 @@ final class CLI: Sendable {
         environment["NO_COLOR"] = "1"
         environment["TERM"] = "dumb"
         environment["PYTHONUNBUFFERED"] = "1"
+        environment.merge(extra) { _, new in new }
         process.environment = environment
 
         let stdout = Pipe()

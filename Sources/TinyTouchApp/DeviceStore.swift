@@ -21,6 +21,15 @@ struct TouchPrompt: Equatable {
     var step: String?
 }
 
+/// Progress of `tinytouch setup`, driven by the CLI's app-mode events.
+enum SetupPhase: Equatable {
+    case idle
+    case running(String)
+    case reconnect
+    case done
+    case failed(String)
+}
+
 struct EnrollmentProgress: Equatable {
     enum Phase: Equatable {
         case approving
@@ -42,7 +51,9 @@ struct EnrollmentProgress: Equatable {
 @Observable
 final class DeviceStore {
     private(set) var cli: CLI?
-    private(set) var connection: Connection = .searching
+    private(set) var connection: Connection = .searching {
+        didSet { announce(from: oldValue) }
+    }
     private(set) var status: DeviceStatus? {
         didSet { if let status { config = status.settings } }
     }
@@ -53,6 +64,9 @@ final class DeviceStore {
     private(set) var events: [DeviceEvent] = []
     private(set) var keyboardLayout = "auto"
     private(set) var helperRunning = false
+    private(set) var helperInstalled = false
+    private(set) var helperExecutable: String?
+    private(set) var setupPhase: SetupPhase = .idle
     private(set) var cliVersion = ""
     private(set) var availablePorts: [String] = []
 
@@ -62,13 +76,28 @@ final class DeviceStore {
     var lastError: String?
     var lastMessage: String?
     var settingsTab: SettingsTab = .general
+    var preferences: AppPreferences?
+    /// Set when someone asks to run setup again from the main window.
+    var setupRequest: DeviceMode??
 
     private var enrollmentTask: Task<Void, Never>?
     private var approvalTask: Task<CLIResult, Error>?
     private var portWatcher: PortWatcher?
     private var portChangeTask: Task<Void, Never>?
+    private var hasConnected = false
+    private var helperMigrationAttempted = false
 
     var isBusy: Bool { busyCount > 0 }
+
+    /// True when the device and this Mac are ready for touch sign-in.
+    var isConfigured: Bool {
+        guard let status, status.fingerprints > 0 else { return false }
+        switch status.mode {
+        case .hid: return status.hosts > 0 && helperInstalled
+        case .piv: return status.pivReady
+        case nil: return false
+        }
+    }
 
     var port: String? {
         if case .connected(let port) = connection { return port }
@@ -135,6 +164,7 @@ final class DeviceStore {
         }
         if catalog.isEmpty { await loadCatalog() }
         await refreshHelper()
+        await migrateHelperIfNeeded()
         // Each device command pauses the HID helper, so read only what the
         // menu and General need; other tabs load their own data.
         guard await resolvePort() else { return }
@@ -225,6 +255,19 @@ final class DeviceStore {
     }
 
     func refreshHelper() async {
+        let wasRunning = helperRunning
+        let agent = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/LaunchAgents/com.tinytouch.helper.plist")
+        let plist = (try? Data(contentsOf: agent)).flatMap {
+            try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any]
+        }
+        helperInstalled = plist != nil
+        helperExecutable = (plist?["ProgramArguments"] as? [String])?.first
+        defer {
+            if wasRunning, !helperRunning, helperInstalled {
+                preferences?.notify("Password entry stopped", "The tinyTouch background helper isn't running. Open tinyTouch to repair it.")
+            }
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = ["print", "gui/\(getuid())/com.tinytouch.helper"]
@@ -365,15 +408,112 @@ final class DeviceStore {
         await refreshStatus()
     }
 
-    func repairHelper() async {
+    /// Moves a helper installed by a standalone CLI onto the CLI inside this app.
+    /// Runs once per launch and only succeeds without prompting when Keychain
+    /// already trusts the bundled CLI's signature.
+    private func migrateHelperIfNeeded() async {
+        guard !helperMigrationAttempted, let cli, cli.isBundled, helperInstalled,
+              let helperExecutable, helperExecutable != cli.executable.path else { return }
+        helperMigrationAttempted = true
+        do {
+            _ = try await cli.run(["--app", "_upgrade-helper"])
+            await refreshHelper()
+        } catch {
+            needsKeychainPassword = true
+        }
+    }
+
+    /// Set when Keychain must be unlocked to let this app's CLI read saved credentials.
+    var needsKeychainPassword = false
+
+    /// Reinstalls the helper. Keychain asks for the login password only when the
+    /// saved credentials don't trust this CLI yet.
+    func repairHelper(keychainPassword: String? = nil) async {
         guard let cli else { return }
+        let asked = Flag()
         await perform {
-            var arguments = ["repair"]
-            if let port { arguments = ["--port", port] + arguments }
-            _ = try await cli.run(arguments)
+            var arguments = ["--app", "repair"]
+            if let port { arguments += ["--port", port] }
+            do {
+                _ = try await cli.run(arguments, input: keychainPassword.map { $0 + "\n" }) { line in
+                    if line.contains(#""event": "keychain_password""#) { asked.set() }
+                }
+            } catch {
+                guard asked.isSet, keychainPassword == nil else { throw error }
+                needsKeychainPassword = true
+                return
+            }
+            needsKeychainPassword = false
+            lastMessage = "Background helper reinstalled."
         }
         await refreshHelper()
-        if lastError == nil { lastMessage = "HID helper reinstalled." }
+    }
+
+    // MARK: - Setup and password
+
+    /// Runs `tinytouch setup` without enrollment; the app enrolls fingers itself.
+    func runSetup(mode: DeviceMode, password: String?) async -> Bool {
+        guard let cli, let port else { return false }
+        setupPhase = .running("Preparing tinyTouch…")
+        var arguments = ["--app", "--port", port, "setup", "--mode", mode.rawValue, "--skip-enroll"]
+        if mode == .piv, status?.mode == .piv, status?.pivReady == true { arguments.append("--no-pair") }
+        var succeeded = false
+        await perform(quiet: true) {
+            do {
+                _ = try await cli.run(
+                    arguments,
+                    input: password.map { $0 + "\n" },
+                    environment: ["SUDO_ASKPASS": CLI.askpass.path]
+                ) { line in
+                    Task { @MainActor in self.handleSetup(line) }
+                }
+                succeeded = true
+            } catch {
+                setupPhase = .failed(error.localizedDescription)
+            }
+        }
+        touchPrompt = nil
+        if succeeded { setupPhase = .done }
+        await refreshAll()
+        return succeeded
+    }
+
+    func resetSetup() {
+        setupPhase = .idle
+    }
+
+    private func handleSetup(_ line: String) {
+        guard line.hasPrefix("@tinytouch "),
+              let data = line.dropFirst("@tinytouch ".count).data(using: .utf8),
+              let event = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let name = event["event"] as? String else {
+            handlePrompt(line, approval: "Approve setup", step: nil)
+            return
+        }
+        switch name {
+        case "reconnect_needed": setupPhase = .reconnect
+        case "reconnected": setupPhase = .running("Finishing setup…")
+        case "piv_creating": setupPhase = .running("Creating the smart card identity. This can take up to 30 seconds.")
+        case "admin_authorization": setupPhase = .running("Waiting for your administrator password…")
+        case "installing_helper": setupPhase = .running("Installing the background helper…")
+        default: break
+        }
+    }
+
+    /// Saves a new typed password. The app confirms it before calling this.
+    func changePassword(_ password: String, finger: Int?) async -> Bool {
+        var arguments = ["password"]
+        if let finger { arguments += ["--finger", String(finger)] }
+        guard let cli, let port else { return false }
+        var saved = false
+        await perform {
+            _ = try await cli.run(["--app", "--port", port] + arguments, input: password + "\n")
+            saved = true
+        }
+        if saved {
+            lastMessage = finger.map { "Password saved for finger \($0)." } ?? "Password saved."
+        }
+        return saved
     }
 
     func uninstallHelper() async {
@@ -386,30 +526,6 @@ final class DeviceStore {
         guard await device(["factory-reset"], input: "y\n", approval: "Factory reset") != nil else { return }
         lastMessage = "tinyTouch was reset. Run setup to use it again."
         await refreshAll()
-    }
-
-    /// Opens Terminal for commands that read a password or need an interactive terminal.
-    func openInTerminal(_ arguments: [String]) {
-        guard let cli else { return }
-        var command = [cli.executable.path]
-        if let port { command += ["--port", port] }
-        command += arguments
-        let script = """
-        #!/bin/zsh
-        clear
-        \(command.map(Self.shellQuote).joined(separator: " "))
-        echo
-        echo "You can close this window."
-        """
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tinytouch-\(arguments.first ?? "command")-\(UUID().uuidString.prefix(8)).command")
-        do {
-            try script.write(to: url, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
-            NSWorkspace.shared.open(url)
-        } catch {
-            report(error)
-        }
     }
 
     // MARK: - Plumbing
@@ -469,6 +585,20 @@ final class DeviceStore {
         }
     }
 
+    private func announce(from previous: Connection) {
+        switch (previous, connection) {
+        case (.connected, .connected):
+            break
+        case (_, .connected):
+            if hasConnected { preferences?.notify("tinyTouch connected", "Touch sign-in is available.") }
+            hasConnected = true
+        case (.connected, .disconnected):
+            preferences?.notify("tinyTouch disconnected", "Touch sign-in is unavailable until you reconnect it.")
+        default:
+            break
+        }
+    }
+
     private func report(_ error: Error) {
         lastError = error.localizedDescription
     }
@@ -476,8 +606,12 @@ final class DeviceStore {
     private static func decodePorts(_ json: String) -> [String] {
         (try? JSONDecoder().decode([String].self, from: Data(json.utf8))) ?? []
     }
+}
 
-    private static func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
+private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    var isSet: Bool { lock.withLock { value } }
+    func set() { lock.withLock { value = true } }
 }

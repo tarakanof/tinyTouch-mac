@@ -1,38 +1,61 @@
 import SwiftUI
 
-struct SettingsView: View {
+/// The app's main window: first-run setup, then device settings in a sidebar layout.
+struct MainView: View {
     @Environment(DeviceStore.self) private var store
+    @Environment(AppPreferences.self) private var preferences
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         @Bindable var store = store
-        TabView(selection: $store.settingsTab) {
-            Tab("General", systemImage: "gearshape", value: SettingsTab.general) {
-                DeviceGate { GeneralSettingsView() }
-                    .frame(height: 714)
-            }
-            Tab("Lighting", systemImage: "lightbulb", value: SettingsTab.lighting) {
-                DeviceGate { LightingSettingsView() }
-                    .frame(height: 730)
-            }
-            Tab("Fingerprints", systemImage: "touchid", value: SettingsTab.fingers) {
-                DeviceGate { FingersView() }
-                    .frame(height: 525)
-            }
-            Tab("Computers", systemImage: "laptopcomputer", value: SettingsTab.computers) {
-                DeviceGate { ComputersView() }
-                    .frame(height: 360)
-            }
-            Tab("Maintenance", systemImage: "wrench.and.screwdriver", value: SettingsTab.maintenance) {
-                MaintenanceView()
-                    .frame(height: 640)
+        Group {
+            if let mode = store.setupRequest {
+                OnboardingView(initialMode: mode, isFirstRun: false)
+            } else if !preferences.hasCompletedSetup {
+                OnboardingView(initialMode: nil, isFirstRun: true)
+            } else {
+                NavigationSplitView {
+                    List(selection: $store.settingsTab) {
+                        ForEach(SettingsTab.allCases, id: \.self) { tab in
+                            Label(tab.title, systemImage: tab.symbol)
+                                .tag(tab)
+                        }
+                    }
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+                } detail: {
+                    detail(for: store.settingsTab)
+                        .navigationTitle(store.settingsTab.title)
+                        .toolbar {
+                            ToolbarItem(placement: .primaryAction) {
+                                RefreshButton { await store.refreshAll() }
+                            }
+                        }
+                }
             }
         }
-        .frame(width: 500)
+        .frame(minWidth: 680, minHeight: 560)
+        .onAppear {
+            AppDelegate.shared?.openWindow = openWindow
+            preferences.mainWindowOpen = true
+        }
+        .onDisappear { preferences.mainWindowOpen = false }
+        .onChange(of: store.isConfigured) {
+            // Someone who already set up tinyTouch with the CLI skips the welcome flow.
+            if store.isConfigured, !preferences.hasCompletedSetup, store.setupPhase == .idle {
+                preferences.hasCompletedSetup = true
+            }
+        }
         .sheet(item: Binding(
             get: { store.touchPrompt.map(IdentifiedPrompt.init) },
             set: { if $0 == nil { store.cancelApproval() } }
         )) { prompt in
             TouchPromptSheet(prompt: prompt.prompt)
+        }
+        .sheet(isPresented: Binding(
+            get: { store.needsKeychainPassword },
+            set: { store.needsKeychainPassword = $0 }
+        )) {
+            KeychainPasswordSheet()
         }
         .alert("Couldn't complete the action", isPresented: Binding(
             get: { store.lastError != nil },
@@ -43,6 +66,41 @@ struct SettingsView: View {
             Text(store.lastError ?? "")
         }
         .overlay(alignment: .bottom) { ToastView() }
+    }
+
+    @ViewBuilder
+    private func detail(for tab: SettingsTab) -> some View {
+        switch tab {
+        case .general: DeviceGate { GeneralSettingsView() }
+        case .lighting: DeviceGate { LightingSettingsView() }
+        case .fingers: DeviceGate { FingersView() }
+        case .computers: DeviceGate { ComputersView() }
+        case .maintenance: MaintenanceView()
+        }
+    }
+}
+
+extension SettingsTab: CaseIterable {
+    static var allCases: [SettingsTab] { [.general, .lighting, .fingers, .computers, .maintenance] }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .lighting: "Lighting"
+        case .fingers: "Fingerprints"
+        case .computers: "Computers"
+        case .maintenance: "Maintenance"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .lighting: "lightbulb"
+        case .fingers: "touchid"
+        case .computers: "laptopcomputer"
+        case .maintenance: "wrench.and.screwdriver"
+        }
     }
 }
 

@@ -7,6 +7,7 @@ struct GeneralSettingsView: View {
     ])
     @State private var pendingMode: DeviceMode?
     @State private var pendingPIVTouch: Bool?
+    @State private var changingPassword = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,6 +41,7 @@ struct GeneralSettingsView: View {
         }
         .onAppear { draft.load(store.config) }
         .onChange(of: store.config) { draft.load(store.config) }
+        .sheet(isPresented: $changingPassword) { ChangePasswordSheet() }
         .confirmationDialog(
             "Switch to \(pendingMode?.title ?? "")?",
             isPresented: Binding(get: { pendingMode != nil }, set: { if !$0 { pendingMode = nil } }),
@@ -176,13 +178,13 @@ struct GeneralSettingsView: View {
                 )
             }
             LabeledContent {
-                Button("Change…") { store.openInTerminal(["password"]) }
+                Button("Change…") { changingPassword = true }
             } label: {
                 SettingLabel(
                     title: "Password",
                     symbol: "key.fill",
                     color: .orange,
-                    info: "Opens Terminal to enter the new password twice. Fingerprints and pairing are kept."
+                    info: "Changes the password tinyTouch types. Fingerprints and pairing are kept."
                 )
             }
         } header: {
@@ -196,7 +198,7 @@ struct GeneralSettingsView: View {
                 if store.status?.pivReady == true {
                     StatusBadge(text: "Ready", color: .green)
                 } else {
-                    Button("Set Up…") { store.openInTerminal(["setup", "--mode", "piv", "--skip-enroll"]) }
+                    Button("Set Up…") { store.setupRequest = .piv }
                 }
             } label: {
                 SettingLabel(title: "Identity", symbol: "person.text.rectangle.fill", color: .blue)

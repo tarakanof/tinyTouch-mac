@@ -9,6 +9,10 @@ let package = Package(
             name: "TinyTouchApp",
             path: "Sources/TinyTouchApp"
         ),
+        .executableTarget(
+            name: "TinyTouchAskpass",
+            path: "Sources/TinyTouchAskpass"
+        ),
         .testTarget(
             name: "TinyTouchAppTests",
             dependencies: ["TinyTouchApp"],

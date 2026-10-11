@@ -30,6 +30,7 @@ struct DeviceStatus: Sendable {
     var pivReady: Bool { raw["piv"] == "ready" }
     var sensorReady: Bool { raw["sensor"] == "ready" }
     var hosts: Int { Int(raw["hosts"] ?? "") ?? 0 }
+    var fingerprints: Int { Int(raw["fingerprints"] ?? "") ?? 0 }
     var pivTouch: Bool { raw["piv_touch"] == "on" }
     var pivTouchActive: Bool { raw["piv_touch_active"] == "on" }
     var pivVisible: Bool { raw["piv_visible"] == "yes" }

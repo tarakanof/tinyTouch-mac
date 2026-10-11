@@ -11,22 +11,17 @@ struct MaintenanceView: View {
                 LabeledContent {
                     Text(store.cliVersion.isEmpty ? "—" : store.cliVersion).foregroundStyle(.secondary)
                 } label: {
-                    SettingLabel(title: "tinytouch CLI", symbol: "terminal.fill", color: .gray)
+                    SettingLabel(
+                        title: "tinytouch CLI",
+                        symbol: "terminal.fill",
+                        color: .gray,
+                        info: store.cli.map { $0.isBundled ? "Built into this app." : "Using \($0.executable.path)." }
+                    )
                 }
                 LabeledContent {
                     Text(store.status?.firmware ?? "—").foregroundStyle(.secondary)
                 } label: {
                     SettingLabel(title: "Firmware", symbol: "memorychip.fill", color: .gray)
-                }
-                LabeledContent {
-                    Button("Update…") { store.openInTerminal(["update"]) }
-                } label: {
-                    SettingLabel(
-                        title: "Software update",
-                        symbol: "arrow.down.circle.fill",
-                        color: .blue,
-                        info: "Updates the CLI, background helper and device firmware in Terminal. Reconnect tinyTouch when it finishes."
-                    )
                 }
             } header: {
                 SectionHeader("Software")
@@ -72,16 +67,17 @@ struct MaintenanceView: View {
                         symbol: "gearshape.2.fill",
                         color: .gray,
                         info: "Repair reinstalls the helper and re-authorizes Keychain access. Saved passwords are kept."
+                            + (store.helperExecutable.map { "\n\nRuns \($0)." } ?? "")
                     )
                 }
                 LabeledContent {
-                    Button("Run Setup…") { store.openInTerminal(["setup"]) }
+                    Button("Run Setup…") { store.setupRequest = .some(nil) }
                 } label: {
                     SettingLabel(
                         title: "Setup",
                         symbol: "wand.and.stars",
                         color: .purple,
-                        info: "Registers this Mac for password entry or pairs the smart card identity, in Terminal."
+                        info: "Registers this Mac for password entry or pairs the smart card identity."
                     )
                 }
             } header: {
