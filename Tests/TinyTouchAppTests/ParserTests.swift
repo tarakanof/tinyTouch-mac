@@ -75,3 +75,21 @@ private func lines(_ text: String) -> [String] {
     #expect(status.settings["typing_delay_ms"] == "7")
     #expect(status.settings["firmware"] == nil)
 }
+
+@Test func groupsDeviceEventsForFiltering() {
+    let events = DeviceEvent.parse([
+        "LOG ms=1000 event=touch_detected value=0",
+        "LOG ms=2000 event=finger_no_match value=0",
+        "LOG ms=3000 event=hid_typing value=0",
+        "LOG ms=4000 event=usb_attached value=0",
+    ])
+    let names: (DeviceEvent.Category) -> [String] = { category in
+        events.filter { $0.belongs(to: category) }.map(\.name)
+    }
+    #expect(names(.all).count == 4)
+    #expect(names(.fingerprints) == ["finger_no_match", "touch_detected"])
+    #expect(names(.passwords) == ["hid_typing"])
+    #expect(names(.problems) == ["finger_no_match"])
+    #expect(names(.device) == ["usb_attached"])
+    #expect(events.first { $0.name == "hid_typing" }?.title == "Typing password")
+}

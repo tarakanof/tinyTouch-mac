@@ -12,6 +12,17 @@ struct TinyTouchApp: App {
         }
         .defaultSize(width: 780, height: 680)
         .defaultLaunchBehavior(delegate.opensWindowAtLaunch ? .presented : .suppressed)
+        // Restored "closed" state would override the launch behavior above.
+        .restorationBehavior(.disabled)
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About tinyTouch") { delegate.showMainWindow(tab: .about) }
+            }
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { delegate.showMainWindow(tab: .app) }
+                    .keyboardShortcut(",")
+            }
+        }
 
         MenuBarExtra(isInserted: Binding(
             get: { delegate.preferences.showInMenuBar },
@@ -24,13 +35,6 @@ struct TinyTouchApp: App {
             MenuBarIcon(store: delegate.store, delegate: delegate)
         }
         .menuBarExtraStyle(.window)
-
-        Settings {
-            AppSettingsView()
-                .environment(delegate.store)
-                .environment(delegate.preferences)
-        }
-        .windowResizability(.contentSize)
     }
 }
 
@@ -86,7 +90,10 @@ private struct MenuBarIcon: View {
         Image(systemName: symbol)
             .symbolEffect(.pulse, isActive: store.touchPrompt != nil || store.enrollment != nil)
             .accessibilityLabel("tinyTouch")
-            .task { delegate.openWindow = openWindow }
+            .task {
+                delegate.openWindow = openWindow
+                if delegate.opensWindowAtLaunch { delegate.showMainWindow() }
+            }
     }
 
     private var symbol: String {

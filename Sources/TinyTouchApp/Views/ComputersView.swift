@@ -41,7 +41,6 @@ struct ComputersView: View {
                 ) {
                     Text("\(store.hosts.identifiers.count) of \(store.hosts.capacity)")
                         .foregroundStyle(.secondary)
-                    RefreshButton { await store.refreshHosts() }
                 }
             }
         }

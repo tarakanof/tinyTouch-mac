@@ -78,7 +78,6 @@ struct GeneralSettingsView: View {
                     ConnectionBadge()
                 }
                 Spacer()
-                RefreshButton { await store.refreshAll() }
             }
             if let status = store.status {
                 LabeledContent {

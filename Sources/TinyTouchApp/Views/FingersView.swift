@@ -22,7 +22,6 @@ struct FingersView: View {
                 ) {
                     Text("\(store.fingers.enrolledCount) of 10")
                         .foregroundStyle(.secondary)
-                    RefreshButton { await store.refreshFingers() }
                 }
             }
         }

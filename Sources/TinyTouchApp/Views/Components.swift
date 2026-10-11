@@ -101,6 +101,7 @@ struct StatusBadge: View {
     }
 }
 
+/// Toolbar button that re-reads the section on screen.
 struct RefreshButton: View {
     @Environment(DeviceStore.self) private var store
     let action: () async -> Void
@@ -111,8 +112,6 @@ struct RefreshButton: View {
         } label: {
             Label("Refresh", systemImage: "arrow.clockwise")
         }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
         .disabled(store.isBusy)
         .help("Refresh")
     }

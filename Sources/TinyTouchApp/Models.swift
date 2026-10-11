@@ -296,6 +296,8 @@ struct DeviceEvent: Identifiable, Sendable {
         case "touch_detected": "Touch detected"
         case "hid_requested": "Password requested"
         case "hid_typed", "hid_sent": "Password typed"
+        case "hid_typing": "Typing password"
+        case "hid_response": "Helper replied"
         case "hid_failed": "Password request failed"
         case "usb_attached": "USB connected"
         case "sensor_probe_ok": "Sensor ready"
@@ -323,6 +325,31 @@ struct DeviceEvent: Identifiable, Sendable {
         case "finger_matched": .green
         case "finger_no_match", "hid_failed": .red
         default: .secondary
+        }
+    }
+
+    enum Category: String, CaseIterable, Identifiable {
+        case all, fingerprints, passwords, problems, device
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .all: "All"
+            case .fingerprints: "Fingerprints"
+            case .passwords: "Passwords"
+            case .problems: "Problems"
+            case .device: "Device"
+            }
+        }
+    }
+
+    func belongs(to category: Category) -> Bool {
+        switch category {
+        case .all: true
+        case .fingerprints: name.hasPrefix("finger_") || name == "touch_detected"
+        case .passwords: name.hasPrefix("hid_")
+        case .problems: name == "finger_no_match" || name.hasSuffix("_failed") || name.hasSuffix("_error")
+        case .device: !name.hasPrefix("finger_") && !name.hasPrefix("hid_") && name != "touch_detected"
         }
     }
 

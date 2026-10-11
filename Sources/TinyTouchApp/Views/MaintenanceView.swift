@@ -85,33 +85,6 @@ struct MaintenanceView: View {
             }
 
             Section {
-                if store.events.isEmpty {
-                    Text("No recent events.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(store.events) { event in
-                        HStack(spacing: 10) {
-                            Image(systemName: event.symbol)
-                                .foregroundStyle(event.tint)
-                                .frame(width: 22)
-                            Text(event.title)
-                            Spacer()
-                            Text(event.uptimeText)
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            } header: {
-                SectionHeader(
-                    title: "Recent Activity",
-                    help: "The last 32 events stored on the device. Times count from when the device started."
-                ) {
-                    RefreshButton { await store.refreshLogs() }
-                }
-            }
-
-            Section {
                 LabeledContent {
                     Button("Reset…", role: .destructive) { confirmReset = true }
                         .disabled(store.port == nil)
@@ -126,10 +99,7 @@ struct MaintenanceView: View {
             }
         }
         .formStyle(.grouped)
-        .task(id: store.port) {
-            await store.refreshHelper()
-            await store.refreshLogs()
-        }
+        .task { await store.refreshHelper() }
         .confirmationDialog("Factory reset tinyTouch?", isPresented: $confirmReset) {
             Button("Erase Everything", role: .destructive) {
                 Task { await store.factoryReset() }

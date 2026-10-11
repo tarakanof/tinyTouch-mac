@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The Settings window (⌘,): how the app behaves on this Mac. Device settings live in the main window.
+/// How the app behaves on this Mac, as opposed to settings stored on the device.
 struct AppSettingsView: View {
     @Environment(AppPreferences.self) private var preferences
     @Environment(DeviceStore.self) private var store
@@ -81,9 +81,6 @@ struct AppSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(width: 460)
-        .fixedSize(horizontal: false, vertical: true)
         .onAppear { preferences.refresh() }
         .alert("Couldn't change the setting", isPresented: Binding(
             get: { error != nil },

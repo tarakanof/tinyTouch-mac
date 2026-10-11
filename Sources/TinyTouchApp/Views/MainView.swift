@@ -16,9 +16,17 @@ struct MainView: View {
             } else {
                 NavigationSplitView {
                     List(selection: $store.settingsTab) {
-                        ForEach(SettingsTab.allCases, id: \.self) { tab in
-                            Label(tab.title, systemImage: tab.symbol)
-                                .tag(tab)
+                        Section("Device") {
+                            ForEach(SettingsTab.device, id: \.self) { tab in
+                                Label(tab.title, systemImage: tab.symbol)
+                                    .tag(tab)
+                            }
+                        }
+                        Section("tinyTouch") {
+                            ForEach([SettingsTab.app, .about], id: \.self) { tab in
+                                Label(tab.title, systemImage: tab.symbol)
+                                    .tag(tab)
+                            }
                         }
                     }
                     .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
@@ -26,8 +34,10 @@ struct MainView: View {
                     detail(for: store.settingsTab)
                         .navigationTitle(store.settingsTab.title)
                         .toolbar {
-                            ToolbarItem(placement: .primaryAction) {
-                                RefreshButton { await store.refreshAll() }
+                            if let refresh = refreshAction(for: store.settingsTab) {
+                                ToolbarItem(placement: .primaryAction) {
+                                    RefreshButton(action: refresh)
+                                }
                             }
                         }
                 }
@@ -75,13 +85,27 @@ struct MainView: View {
         case .lighting: DeviceGate { LightingSettingsView() }
         case .fingers: DeviceGate { FingersView() }
         case .computers: DeviceGate { ComputersView() }
+        case .activity: DeviceGate { ActivityView() }
         case .maintenance: MaintenanceView()
+        case .app: AppSettingsView()
+        case .about: AboutView()
+        }
+    }
+
+    private func refreshAction(for tab: SettingsTab) -> (() async -> Void)? {
+        switch tab {
+        case .general, .lighting: { await store.refreshAll() }
+        case .fingers: { await store.refreshFingers() }
+        case .computers: { await store.refreshHosts() }
+        case .activity: { await store.refreshLogs() }
+        case .maintenance: { await store.refreshHelper() }
+        case .app, .about: nil
         }
     }
 }
 
-extension SettingsTab: CaseIterable {
-    static var allCases: [SettingsTab] { [.general, .lighting, .fingers, .computers, .maintenance] }
+extension SettingsTab {
+    static let device: [SettingsTab] = [.general, .lighting, .fingers, .computers, .activity, .maintenance]
 
     var title: String {
         switch self {
@@ -89,7 +113,10 @@ extension SettingsTab: CaseIterable {
         case .lighting: "Lighting"
         case .fingers: "Fingerprints"
         case .computers: "Computers"
+        case .activity: "Activity"
         case .maintenance: "Maintenance"
+        case .app: "Application"
+        case .about: "About"
         }
     }
 
@@ -99,7 +126,10 @@ extension SettingsTab: CaseIterable {
         case .lighting: "lightbulb"
         case .fingers: "touchid"
         case .computers: "laptopcomputer"
+        case .activity: "list.bullet.rectangle"
         case .maintenance: "wrench.and.screwdriver"
+        case .app: "macwindow"
+        case .about: "info.circle"
         }
     }
 }
@@ -202,21 +232,21 @@ struct ApplyBar: View {
     let apply: () -> Void
 
     var body: some View {
+        if changeCount > 0 { bar }
+    }
+
+    private var bar: some View {
         HStack {
-            if changeCount > 0 {
-                Label(
-                    changeCount == 1 ? "1 unsaved change" : "\(changeCount) unsaved changes",
-                    systemImage: "touchid"
-                )
-                .foregroundStyle(.secondary)
-                .help("Each saved change asks you to touch tinyTouch.")
-            }
+            Label(
+                changeCount == 1 ? "1 unsaved change" : "\(changeCount) unsaved changes",
+                systemImage: "touchid"
+            )
+            .foregroundStyle(.secondary)
+            .help("Each saved change asks you to touch tinyTouch.")
             Spacer()
             Button("Revert", action: revert)
-                .disabled(changeCount == 0)
             Button("Apply", action: apply)
                 .keyboardShortcut(.defaultAction)
-                .disabled(changeCount == 0)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

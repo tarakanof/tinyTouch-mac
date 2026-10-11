@@ -3,7 +3,6 @@ import SwiftUI
 struct MenuBarView: View {
     @Environment(DeviceStore.self) private var store
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -37,8 +36,7 @@ struct MenuBarView: View {
                 }
                 .disabled(store.isBusy)
                 MenuRow(title: "Settings…", symbol: "gearshape", shortcut: ",") {
-                    openSettings()
-                    NSApp.activate()
+                    show(.app)
                 }
             }
 
