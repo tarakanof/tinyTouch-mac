@@ -9,6 +9,8 @@ if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app ]; then
 fi
 
 version="$(cat ../../VERSION 2>/dev/null || echo 0.0.0)"
+# CFBundleShortVersionString allows only numbers and dots.
+version="${version%%-*}"
 build="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 
 swift build -c release
