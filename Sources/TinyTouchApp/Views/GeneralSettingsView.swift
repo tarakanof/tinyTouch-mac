@@ -173,7 +173,7 @@ struct GeneralSettingsView: View {
                     title: "Keyboard layout",
                     symbol: "globe",
                     color: .teal,
-                    info: "How your password is translated into key presses. Applies to this Mac only and doesn't need a touch."
+                    info: "Match Input Source types your password for your Latin keyboard layout, such as ABC or German. U.S. sends U.S. key positions as they are. If a non-Latin input source such as Russian is active, tinyTouch switches to your Latin layout while it types, then switches back. Applies to this Mac only and doesn't need a touch."
                 )
             }
             LabeledContent {
