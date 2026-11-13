@@ -16,6 +16,11 @@ without ever opening Terminal.
 
 <br>
 
+<a href="https://github.com/tarakanof/tinyTouch-mac/releases/latest"><img src="https://img.shields.io/github/v/release/tarakanof/tinyTouch-mac?label=Download%20for%20Mac&logo=apple&logoColor=white&color=4A7BFF&style=for-the-badge" alt="Download for Mac"></a>
+
+<br>
+<br>
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.webp">
   <img src="docs/images/overview-light.webp" width="820" alt="The Overview tab: the sensor with its glowing ring, fingerprint and helper status, a notice about a partly enrolled finger, and recent activity">
@@ -138,17 +143,33 @@ search and filters.
 
 ## Get started
 
+**You need** a Mac with Apple silicon running macOS 27, and a tinyTouch with its
+firmware flashed. The app doesn't flash firmware: build, flash and update the device
+as upstream describes in its [setup guide](https://docs.tinytouch.dev/customer/setup).
+
+### Install
+
 1. Download `tinyTouch-<version>.dmg` from the
    [latest release](https://github.com/tarakanof/tinyTouch-mac/releases/latest).
-   It needs macOS 27 on a Mac with Apple silicon.
-2. Open it and drag **tinyTouch** onto **Applications**.
-3. Open tinyTouch from Applications, connect your tinyTouch, and follow the setup.
+2. Open the disk image and drag **tinyTouch** onto **Applications**.
+3. Open **tinyTouch** from Applications. If you open it straight from the disk
+   image instead, it offers to move itself to Applications first.
+4. Connect your tinyTouch with a USB data cable and follow the setup: choose
+   password entry or smart card, then enroll a finger.
 
-The app is signed and notarized by Apple. It does not change the firmware: build,
-flash and update the device as upstream describes in its
-[setup guide](https://docs.tinytouch.dev/customer/setup).
+The app is signed with Developer ID and notarized by Apple, so it opens without
+security warnings. Everything it needs, including the `tinytouch` command-line tool,
+is inside the app.
 
-Prefer to build it yourself? See [Building](docs/building.md).
+### Update
+
+Download the new disk image, quit tinyTouch from its menu bar item, and drag the new
+**tinyTouch** onto **Applications**, replacing the old one. Your fingerprints,
+settings and saved password stay as they are.
+
+### Build from source
+
+See [Building](docs/building.md).
 
 ## Documentation
 
