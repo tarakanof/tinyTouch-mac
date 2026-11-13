@@ -570,12 +570,16 @@ final class DeviceStore {
         await refreshStatus()
     }
 
-    /// Moves a helper installed by a standalone CLI onto the CLI inside this app.
-    /// Runs once per launch and only succeeds without prompting when Keychain
-    /// already trusts the bundled CLI's signature.
+    /// Moves a helper installed by a standalone CLI onto the CLI inside this app, and
+    /// reinstalls it once after the app was updated in place: the running helper keeps
+    /// the replaced CLI until it restarts, and a new CLI may install the service
+    /// differently. Runs once per launch and only succeeds without prompting when
+    /// Keychain already trusts the bundled CLI's signature.
     private func migrateHelperIfNeeded() async {
         guard !helperMigrationAttempted, let cli, cli.isBundled, helperInstalled,
-              let helperExecutable, !Self.isSameFile(helperExecutable, cli.executable.path) else { return }
+              let helperExecutable else { return }
+        let updated = UserDefaults.standard.string(forKey: Self.helperBuildKey) != Self.appBuild
+        guard updated || !Self.isSameFile(helperExecutable, cli.executable.path) else { return }
         helperMigrationAttempted = true
         // Any other failure leaves the old helper running; Repair reports the reason.
         if (try? await installHelper(["--app", "_upgrade-helper"], keychainPassword: nil)) == false {
@@ -586,6 +590,11 @@ final class DeviceStore {
 
     /// Set when Keychain must be unlocked to let this app's CLI read saved credentials.
     var needsKeychainPassword = false
+
+    private static let helperBuildKey = "helperBuild"
+    private static var appBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+    }
 
     /// Reinstalls the helper. Keychain asks for the login password only when the
     /// saved credentials don't trust this CLI yet.
@@ -608,6 +617,8 @@ final class DeviceStore {
             _ = try await cli.run(arguments, input: keychainPassword.map { $0 + "\n" }) { line in
                 if line.contains(#""event": "keychain_password""#) { askedForPassword = true }
             }
+            // The helper now runs this build's CLI.
+            UserDefaults.standard.set(Self.appBuild, forKey: Self.helperBuildKey)
             return true
         } catch {
             guard askedForPassword, keychainPassword == nil else { throw error }
@@ -637,6 +648,8 @@ final class DeviceStore {
         await perform(quiet: true) {
             do {
                 _ = try await run.value
+                // Setup installed the helper from this build's CLI.
+                UserDefaults.standard.set(Self.appBuild, forKey: Self.helperBuildKey)
             } catch is CancellationError {
                 outcome = .idle
             } catch {
