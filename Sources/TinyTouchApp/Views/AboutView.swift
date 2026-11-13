@@ -41,7 +41,7 @@ struct AboutView: View {
                 LinkRow(title: "tinyTouch on GitHub", symbol: "chevron.left.forwardslash.chevron.right",
                         url: "https://github.com/ZimengXiong/tinyTouch")
                 LinkRow(title: "This build's source", symbol: "arrow.triangle.branch",
-                        url: "https://github.com/tarakanof/tinyTouch")
+                        url: "https://github.com/tarakanof/tinyTouch-fork")
                 LinkRow(title: "Sponsor the project", symbol: "heart.fill",
                         url: "https://github.com/sponsors/ZimengXiong")
             }
