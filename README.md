@@ -1,8 +1,16 @@
 # tinyTouch for macOS
 
-The tinyTouch app: first-run setup, device settings, and a menu bar status item.
-It carries its own signed copy of the `tinytouch` CLI and runs it for every device
-operation, so nothing else needs to be installed and nothing opens Terminal.
+A macOS companion app for [tinyTouch](https://github.com/ZimengXiong/tinyTouch), the
+open-source fingerprint device by Zimeng Xiong: first-run setup, device settings, and
+a menu bar status item. It carries its own signed copy of the `tinytouch` CLI and
+runs it for every device operation, so nothing else needs to be installed and
+nothing opens Terminal.
+
+This is an independent project and not part of upstream tinyTouch. It does not
+change the firmware: build, flash and update the device as upstream describes in its
+[setup guide](https://docs.tinytouch.dev/customer/setup).
+
+There is no prebuilt download yet; build it from source.
 
 ## Build
 
@@ -10,15 +18,29 @@ Requires Xcode 27 (the SwiftUI macros and `actool` are not part of the Command L
 Tools) and a Python 3.13 with bundled Expat, such as one managed by `uv`, for the CLI.
 
 ```sh
+git clone --recurse-submodules https://github.com/tarakanof/tinyTouch-mac.git
+cd tinyTouch-mac
 TINYTOUCH_PYTHON="$(uv python find --managed-python 3.13)" ./build-app.sh
 cp -R dist/tinyTouch.app /Applications/
 swift test                             # parser, process runner and store tests
 ```
 
-`build-app.sh` builds the CLI with `release/build-standalone-macos.sh` unless
-`build/distribution/bin/tinytouch` already exists (or `TINYTOUCH_CLI_BUNDLE` points
-at one), compiles `Resources/AppIcon.icon` with `actool`, and signs with your first
+`build-app.sh` builds the CLI from the `tinytouch` submodule unless
+`build/cli/bin/tinytouch` already exists (or `TINYTOUCH_CLI_BUNDLE` points at one),
+compiles `Resources/AppIcon.icon` with `actool`, and signs with your first
 Developer ID or Apple Development identity (override with `SIGN_IDENTITY`).
+
+## The CLI submodule
+
+The app needs a few CLI and helper changes that upstream does not have yet: an app
+mode that takes secrets from stdin and reports setup events, saving several settings
+with one approval, and marking this Mac in the computers list. The `tinytouch`
+submodule therefore pins the `app-cli` branch of
+[tarakanof/tinyTouch-fork](https://github.com/tarakanof/tinyTouch-fork), which is
+upstream plus those changes. Once upstream has them, the submodule will point at
+upstream.
+
+The app's version is in `VERSION`. The CLI and firmware keep their own versions.
 
 Use the same identity for every build. Keychain grants the background helper access
 by the CLI's signature, so a different identity makes the helper ask for Keychain

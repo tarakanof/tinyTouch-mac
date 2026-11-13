@@ -40,14 +40,14 @@ struct AboutView: View {
                         url: "https://docs.tinytouch.dev/reference/cli")
                 LinkRow(title: "tinyTouch on GitHub", symbol: "chevron.left.forwardslash.chevron.right",
                         url: "https://github.com/ZimengXiong/tinyTouch")
-                LinkRow(title: "This build's source", symbol: "arrow.triangle.branch",
-                        url: "https://github.com/tarakanof/tinyTouch-fork")
+                LinkRow(title: "This app's source", symbol: "arrow.triangle.branch",
+                        url: "https://github.com/tarakanof/tinyTouch-mac")
                 LinkRow(title: "Sponsor the project", symbol: "heart.fill",
                         url: "https://github.com/sponsors/ZimengXiong")
             }
 
             Section {
-                Text("MIT License. Copyright © 2026 Zimeng Xiong.")
+                Text("MIT License. tinyTouch © 2026 Zimeng Xiong. macOS app © 2026 Dmitrii Tarakanov.")
                     .foregroundStyle(.secondary)
             }
         }

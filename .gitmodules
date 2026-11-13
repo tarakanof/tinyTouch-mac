@@ -1,0 +1,4 @@
+[submodule "tinytouch"]
+	path = tinytouch
+	url = https://github.com/tarakanof/tinyTouch-fork.git
+	branch = app-cli

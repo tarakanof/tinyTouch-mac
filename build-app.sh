@@ -8,15 +8,22 @@ if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app ]; then
   export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi
 
-version="$(cat ../../VERSION 2>/dev/null || echo 0.0.0)"
+version="$(cat VERSION 2>/dev/null || echo 0.0.0)"
 # CFBundleShortVersionString allows only numbers and dots.
 version="${version%%-*}"
 build="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 
-# The CLI comes from the release build script; set TINYTOUCH_CLI_BUNDLE to reuse a build.
-cli="${TINYTOUCH_CLI_BUNDLE:-../../build/distribution/bin/tinytouch}"
+# The CLI is built from the tinytouch submodule; set TINYTOUCH_CLI_BUNDLE to reuse a build.
+cli="${TINYTOUCH_CLI_BUNDLE:-build/cli/bin/tinytouch}"
 if [ ! -x "$cli/tinytouch" ]; then
-  zsh ../../release/build-standalone-macos.sh
+  if [ ! -f tinytouch/release/build-standalone-macos.sh ]; then
+    echo "The tinytouch submodule is missing. Run: git submodule update --init" >&2
+    exit 1
+  fi
+  # Keep the CLI's build output in this repository, not inside the submodule.
+  TINYTOUCH_BUILD_DIR="$PWD/build/cli" TINYTOUCH_VENV_DIR="$PWD/build/cli-venv" \
+    TINYTOUCH_OUTPUT="$PWD/build/cli/tinytouch.tar.gz" \
+    zsh tinytouch/release/build-standalone-macos.sh
 fi
 
 swift build -c release
