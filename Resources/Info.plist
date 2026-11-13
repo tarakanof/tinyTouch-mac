@@ -30,6 +30,8 @@
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>MIT License</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
     <key>SUFeedURL</key>
     <string>https://github.com/tarakanof/tinyTouch-mac/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>
