@@ -12,7 +12,7 @@ Tools) and a Python 3.13 with bundled Expat, such as one managed by `uv`, for th
 ```sh
 TINYTOUCH_PYTHON="$(uv python find --managed-python 3.13)" ./build-app.sh
 cp -R dist/tinyTouch.app /Applications/
-swift test                             # parser tests
+swift test                             # parser, process runner and store tests
 ```
 
 `build-app.sh` builds the CLI with `release/build-standalone-macos.sh` unless

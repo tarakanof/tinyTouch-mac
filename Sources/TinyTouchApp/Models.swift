@@ -28,7 +28,7 @@ struct DeviceStatus: Sendable {
     var build: String { raw["build"] ?? "—" }
     var mode: DeviceMode? { raw["mode"].flatMap(DeviceMode.init) }
     var pivReady: Bool { raw["piv"] == "ready" }
-    var sensorReady: Bool { raw["sensor"] == "ready" }
+    var sensorReady: Bool { ["ready", "ok"].contains(raw["sensor"]) }
     var hosts: Int { Int(raw["hosts"] ?? "") ?? 0 }
     var fingerprints: Int { Int(raw["fingerprints"] ?? "") ?? 0 }
     var pivTouch: Bool { raw["piv_touch"] == "on" }

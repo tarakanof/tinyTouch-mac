@@ -35,8 +35,12 @@ struct OnboardingView: View {
         .onAppear(perform: start)
         .onChange(of: store.port) { if step == .connect, store.port != nil { step = .mode } }
         .onChange(of: store.setupPhase) {
-            if store.setupPhase == .done, step == .working {
+            guard step == .working else { return }
+            if store.setupPhase == .done {
                 step = store.fingers.enrolledCount == 0 ? .enroll : .done
+            } else if store.setupPhase == .idle {
+                // Cancelled from the touch prompt.
+                step = .credentials
             }
         }
         .sheet(item: Binding(
@@ -90,9 +94,16 @@ struct OnboardingView: View {
         ) {
             PageSymbol(symbol: "cable.connector", color: .blue)
         } content: {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Looking for tinyTouch…").foregroundStyle(.secondary)
+            if case .failed(let message) = store.connection {
+                VStack(spacing: 10) {
+                    Text(message).foregroundStyle(.secondary)
+                    Button("Try Again") { Task { await store.refreshAll() } }
+                }
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking for tinyTouch…").foregroundStyle(.secondary)
+                }
             }
         }
     }

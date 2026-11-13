@@ -144,7 +144,7 @@ struct EnrollmentSheet: View {
             }
             .frame(minHeight: 48)
 
-            ProgressView(value: Double(progress.completedScans), total: 8)
+            ProgressView(value: Double(progress.completedScans), total: Double(EnrollmentProgress.totalScans))
                 .frame(width: 220)
 
             HStack {
@@ -169,7 +169,6 @@ struct EnrollmentSheet: View {
         case .touch(let view, let second):
             "\(second ? "Again: " : "")Place the \(EnrollmentProgress.viewNames[safe: view - 1] ?? "finger")"
         case .lift: "Lift your finger"
-        case .verifying: "Checking enrollment…"
         case .done: "Finger enrolled"
         case .failed: "Enrollment didn't finish"
         }
@@ -183,8 +182,6 @@ struct EnrollmentSheet: View {
             "View \(view) of 4. Use the same new finger and hold it still."
         case .lift:
             "Lift your finger away from the sensor."
-        case .verifying:
-            "Confirming all four views were saved."
         case .done:
             "You can use this finger to authenticate now."
         case .failed(let message):

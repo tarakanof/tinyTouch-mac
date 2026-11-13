@@ -91,6 +91,8 @@ final class AppPreferences {
         // An installed helper means setup already ran, possibly from the CLI.
         if !hasCompletedSetup, FileManager.default.fileExists(atPath: NSHomeDirectory() + "/Library/LaunchAgents/com.tinytouch.helper.plist") {
             hasCompletedSetup = true
+            // Observers don't run during init, and the helper may be gone next launch.
+            defaults.set(true, forKey: "hasCompletedSetup")
         }
         refresh()
     }

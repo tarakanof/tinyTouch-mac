@@ -14,6 +14,12 @@ final class PortWatcher {
         self.onChange = onChange
     }
 
+    /// The notifications hold an unretained pointer to this object.
+    isolated deinit {
+        for iterator in iterators { IOObjectRelease(iterator) }
+        if let port { IONotificationPortDestroy(port) }
+    }
+
     func start() {
         guard port == nil, let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
         self.port = port

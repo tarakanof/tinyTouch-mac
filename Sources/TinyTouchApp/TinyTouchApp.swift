@@ -38,50 +38,47 @@ struct TinyTouchApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    static let mainWindow = "main"
-    @MainActor private(set) static weak var shared: AppDelegate?
+    nonisolated static let mainWindow = "main"
+    private(set) static weak var shared: AppDelegate?
 
-    @MainActor let preferences = AppPreferences()
-    @MainActor let store = DeviceStore()
+    let preferences = AppPreferences()
+    let store = DeviceStore()
     /// Captured from a live view, since only views can open SwiftUI windows.
-    @MainActor var openWindow: OpenWindowAction?
+    var openWindow: OpenWindowAction?
 
-    @MainActor var opensWindowAtLaunch: Bool {
+    var opensWindowAtLaunch: Bool {
         !preferences.showInMenuBar || !preferences.hasCompletedSetup
             || CommandLine.arguments.contains("--settings")
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        MainActor.assumeIsolated {
-            Self.shared = self
-            store.preferences = preferences
-            preferences.applyActivationPolicy()
-        }
+        Self.shared = self
+        store.preferences = preferences
+        preferences.applyActivationPolicy()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        MainActor.assumeIsolated { store.start() }
+        store.start()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        MainActor.assumeIsolated {
-            preferences.refresh()
-            Task { await preferences.refreshNotificationStatus() }
-        }
+        preferences.refresh()
+        Task { await preferences.refreshNotificationStatus() }
     }
 
     /// Opening the app again from Finder or Spotlight shows the main window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        MainActor.assumeIsolated { showMainWindow() }
+        showMainWindow()
         return false
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        MainActor.assumeIsolated { !preferences.showInMenuBar }
+        !preferences.showInMenuBar
     }
 
-    @MainActor func showMainWindow(tab: SettingsTab? = nil) {
+    func showMainWindow(tab: SettingsTab? = nil) {
         if let tab { store.settingsTab = tab }
         openWindow?(id: Self.mainWindow)
         NSApp.activate()

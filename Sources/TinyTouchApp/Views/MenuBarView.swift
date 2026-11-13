@@ -232,8 +232,15 @@ struct DisconnectedMessage: View {
                 }
             }
         case .failed(let message):
-            ContentUnavailableView("Can't reach tinyTouch", systemImage: "exclamationmark.triangle",
-                                   description: Text(message))
+            ContentUnavailableView {
+                Label("Can't reach tinyTouch", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(message)
+            } actions: {
+                Button("Try Again") {
+                    Task { await store.refreshAll() }
+                }
+            }
         case .searching:
             ContentUnavailableView("Looking for tinyTouch…", systemImage: "cable.connector")
         default:

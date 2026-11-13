@@ -3,7 +3,7 @@ import Foundation
 @testable import TinyTouchApp
 
 private func lines(_ text: String) -> [String] {
-    CLIResult(status: 0, stdout: text, stderr: "").lines
+    ProcessOutput(status: 0, stdout: text, stderr: "").lines
 }
 
 @Test func parsesFingerInventory() {
@@ -103,4 +103,101 @@ private func lines(_ text: String) -> [String] {
     #expect(hosts.capacity == 8)
     #expect(hosts.identifiers == ["0123456789abcdef", "fedcba9876543210"])
     #expect(hosts.local == "fedcba9876543210")
+}
+
+/// What `tinytouch enroll 2` prints outside a terminal, following the firmware's
+/// events: a lift before each view, then touch, lift, touch again.
+private let enrollmentTranscript = """
+Touch the device with a registered finger to unlock configuration.
+Lift your finger away from the sensor.
+Finger 2: View 1 of 4.
+Touch the sensor with the left edge of the same finger.
+Lift your finger away from the sensor.
+Touch the sensor again with the left edge of the same finger.
+Lift your finger away from the sensor.
+Finger 2: View 2 of 4.
+Touch the sensor with the right edge of the same finger.
+Lift your finger away from the sensor.
+Touch the sensor again with the right edge of the same finger.
+Lift your finger away from the sensor.
+Finger 2: View 3 of 4.
+Touch the sensor with the top of the same finger.
+Lift your finger away from the sensor.
+Touch the sensor again with the top of the same finger.
+Lift your finger away from the sensor.
+Finger 2: View 4 of 4.
+Touch the sensor with the center of the same finger.
+Lift your finger away from the sensor.
+Touch the sensor again with the center of the same finger.
+Finger 2 is enrolled with all four views.
+"""
+
+@Test func followsEnrollmentToCompletion() {
+    var progress = EnrollmentProgress(finger: 2)
+    var phases: [EnrollmentProgress.Phase] = []
+    for line in lines(enrollmentTranscript) {
+        progress.follow(line)
+        if phases.last != progress.phase { phases.append(progress.phase) }
+    }
+    #expect(phases.prefix(5) == [
+        .approving, .lift(view: 1), .touch(view: 1, second: false), .lift(view: 1), .touch(view: 1, second: true),
+    ])
+    // The device sends nothing after the last scan, so one is still open here.
+    #expect(progress.phase == .touch(view: 4, second: true))
+    #expect(progress.completedScans == EnrollmentProgress.totalScans - 1)
+
+    progress.finish()
+    #expect(progress.phase == .done)
+    #expect(progress.completedScans == EnrollmentProgress.totalScans)
+}
+
+@Test func touchPromptEndsWithTheNextLine() {
+    var prompt = TouchPrompt.after(
+        "Touch the device with a registered finger to unlock configuration.",
+        current: nil, approval: "Save typing delay", step: "Change 1 of 2"
+    )
+    #expect(prompt?.title == "Save typing delay")
+    #expect(prompt?.step == "Change 1 of 2")
+    prompt = TouchPrompt.after("Lift your finger away from the sensor.", current: prompt, approval: nil, step: nil)
+    #expect(prompt?.detail == "Lift your finger.")
+    prompt = TouchPrompt.after("Updated typing_delay_ms to 7.", current: prompt, approval: nil, step: nil)
+    #expect(prompt == nil)
+}
+
+/// What `tinytouch mode hid` prints. The sheet must stay up from the touch to
+/// the end, so there is never a line that leaves no prompt.
+@Test func modeSwitchKeepsOnePromptUntilTheCommandEnds() {
+    var prompt: TouchPrompt?
+    var kinds: [TouchPrompt.Kind?] = []
+    for line in lines("""
+    Touch the device with a registered finger to unlock configuration.
+    HID mode was selected.
+    Unplug and reconnect tinyTouch to apply the new device mode.
+    Waiting for the device to disconnect from USB.
+    The device disconnected. Waiting for it to reconnect.
+    HID mode is active.
+    """) {
+        prompt = TouchPrompt.after(line, current: prompt, approval: "Switch to Password (HID)", step: nil)
+        kinds.append(prompt?.kind)
+    }
+    #expect(kinds == [.touch, .reconnect, .reconnect, .reconnect, .reconnect, .reconnect])
+    #expect(prompt?.title == "Reconnect tinyTouch")
+    #expect(prompt?.symbol == "cable.connector.slash")
+    #expect(prompt?.detail == "Plug tinyTouch back in.")
+}
+
+@Test func setupNeverShowsTheReconnectPrompt() {
+    // Setup shows its own reconnect page, driven by the CLI's app events.
+    var prompt = TouchPrompt.after(
+        "Touch the device with a registered finger to unlock configuration.",
+        current: nil, approval: "Approve setup", step: nil
+    )
+    for line in ["Unplug and reconnect tinyTouch to use HID mode.", "The device disconnected. Waiting for it to reconnect."] {
+        prompt = TouchPrompt.after(line, current: prompt, approval: "Approve setup", step: nil)
+        #expect(prompt == nil)
+    }
+}
+
+@Test func liftWithoutAPromptShowsNothing() {
+    #expect(TouchPrompt.after("Lift your finger away from the sensor.", current: nil, approval: nil, step: nil) == nil)
 }

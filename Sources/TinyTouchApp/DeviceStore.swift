@@ -14,11 +14,62 @@ enum Connection: Equatable {
     case failed(String)
 }
 
-/// Shown while the device waits for a finger on the sensor.
+/// Shown while a command waits for the person: a finger on the sensor, or a reconnect.
 struct TouchPrompt: Equatable {
+    enum Kind: Equatable {
+        /// Waiting for a finger. Over as soon as the CLI prints anything else,
+        /// because it prints nothing when the touch is accepted.
+        case touch
+        /// Waiting for tinyTouch to be unplugged and plugged back in, which
+        /// `tinytouch mode` does until it exits. Stays up until the command ends.
+        case reconnect
+    }
+
     var title: String
     var detail: String
     var step: String?
+    var kind = Kind.touch
+
+    var symbol: String {
+        switch kind {
+        case .touch: "touchid"
+        case .reconnect: "cable.connector.slash"
+        }
+    }
+
+    /// The prompt to show once the CLI has printed `line`.
+    static func after(_ line: String, current: TouchPrompt?, approval: String?, step: String?) -> TouchPrompt? {
+        if line.hasPrefix("Touch the device with a registered finger") {
+            return TouchPrompt(
+                title: approval ?? "Approve on tinyTouch",
+                detail: "Touch the sensor with an enrolled finger.",
+                step: step
+            )
+        }
+        if var prompt = current, prompt.kind == .reconnect {
+            if line.hasPrefix("The device disconnected") { prompt.detail = "Plug tinyTouch back in." }
+            return prompt
+        }
+        if isModeSaved(line) || line.hasPrefix("Waiting for the device to disconnect") {
+            return TouchPrompt(
+                title: "Reconnect tinyTouch",
+                detail: "Unplug tinyTouch, then plug it back in.",
+                kind: .reconnect
+            )
+        }
+        if line.hasPrefix("Lift your finger") {
+            var prompt = current
+            prompt?.detail = "Lift your finger."
+            return prompt
+        }
+        return nil
+    }
+
+    /// `tinytouch mode` prints this once the device has stored the new mode,
+    /// just before it starts waiting for the reconnect.
+    static func isModeSaved(_ line: String) -> Bool {
+        line.hasSuffix(" mode was selected.")
+    }
 }
 
 /// Progress of `tinytouch setup`, driven by the CLI's app-mode events.
@@ -35,7 +86,6 @@ struct EnrollmentProgress: Equatable {
         case approving
         case touch(view: Int, second: Bool)
         case lift(view: Int)
-        case verifying
         case done
         case failed(String)
     }
@@ -45,6 +95,37 @@ struct EnrollmentProgress: Equatable {
     var completedScans = 0
 
     static let viewNames = ["left edge", "right edge", "top", "center"]
+    /// Each of the four views is scanned twice.
+    static let totalScans = viewNames.count * 2
+
+    /// Follows one line of `tinytouch enroll` output, e.g. "Finger 2: View 1 of 4."
+    mutating func follow(_ line: String) {
+        let view: Int = switch phase {
+        case .touch(let view, _), .lift(let view): view
+        default: 1
+        }
+        if line.hasPrefix("Touch the device with a registered finger") {
+            phase = .approving
+        } else if line.hasPrefix("Finger "), line.contains(": View ") {
+            let number = line.components(separatedBy: ": View ").last?
+                .split(separator: " ").first.flatMap { Int($0) } ?? view
+            phase = .touch(view: number, second: false)
+        } else if line.hasPrefix("Touch the sensor again") {
+            phase = .touch(view: view, second: true)
+        } else if line.hasPrefix("Touch the sensor") {
+            phase = .touch(view: view, second: false)
+        } else if line.hasPrefix("Lift your finger") {
+            if case .touch = phase { completedScans += 1 }
+            phase = .lift(view: view)
+        }
+    }
+
+    /// The device reports nothing after the last scan, so the CLI exiting cleanly
+    /// is what completes it.
+    mutating func finish() {
+        completedScans = Self.totalScans
+        phase = .done
+    }
 }
 
 @MainActor
@@ -82,14 +163,23 @@ final class DeviceStore {
     /// Set when someone asks to run setup again from the main window.
     var setupRequest: DeviceMode??
 
-    private var enrollmentTask: Task<Void, Never>?
-    private var approvalTask: Task<CLIResult, Error>?
+    // Each of these is the CLI run itself, so cancelling one interrupts only that
+    // command and never the refreshes that follow it.
+    private var enrollmentRun: Task<ProcessOutput, Error>?
+    private var approvalTask: Task<ProcessOutput, Error>?
+    /// The setup that owns `setupPhase`, from its start until it has published
+    /// its result. Leaving setup clears it, which disowns a run still finishing.
+    private var setupRun: Task<ProcessOutput, Error>?
     private var portWatcher: PortWatcher?
     private var portChangeTask: Task<Void, Never>?
+    /// A device appeared while a command was running; look for it once that ends.
+    private var portChangePending = false
     private var hasConnected = false
     private var helperMigrationAttempted = false
 
     var isBusy: Bool { busyCount > 0 }
+    /// True while a command that needs a touch is running.
+    var isApproving: Bool { approvalTask != nil }
 
     /// True when the device and this Mac are ready for touch sign-in.
     var isConfigured: Bool {
@@ -111,8 +201,8 @@ final class DeviceStore {
         set { UserDefaults.standard.set(newValue, forKey: "port") }
     }
 
-    init() {
-        cli = CLI.locate()
+    init(cli: CLI? = CLI.locate()) {
+        self.cli = cli
         if cli == nil { connection = .noCLI }
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--tab"), index + 1 < arguments.count,
@@ -142,17 +232,36 @@ final class DeviceStore {
         portChangeTask?.cancel()
         portChangeTask = Task {
             try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled, let cli,
-                  let result = try? await cli.runDetached(["ports", "--json"]) else { return }
-            let ports = Self.decodePorts(result.stdout)
-            availablePorts = ports
-            if let port, !ports.contains(port) {
-                connection = .disconnected
-                status = nil
-            } else if port == nil, !ports.isEmpty, !isBusy {
-                await refreshAll()
-            }
+            guard !Task.isCancelled else { return }
+            // Only the wait is cancellable; a later change must not cut a refresh short.
+            portChangeTask = nil
+            await rescanPorts()
         }
+    }
+
+    private func rescanPorts() async {
+        guard let cli, let result = try? await cli.runDetached(["ports", "--json"]) else { return }
+        let ports = Self.decodePorts(result.stdout)
+        availablePorts = ports
+        if let port, !ports.contains(port) {
+            connection = .disconnected
+            status = nil
+        } else if port == nil, !ports.isEmpty {
+            // A running command, such as setup waiting for a reconnect, owns the port.
+            if isBusy { portChangePending = true } else { await refreshAll() }
+        }
+    }
+
+    /// Switches to another connected tinyTouch.
+    func selectPort(_ selected: String) async {
+        preferredPort = selected
+        if port != selected {
+            connection = .searching
+            status = nil
+            hosts = nil
+            events = []
+        }
+        await refreshAll()
     }
 
     // MARK: - Reading state
@@ -190,19 +299,27 @@ final class DeviceStore {
             status = nil
             return false
         }
+        // The port list holds every USB serial device. Only one that has answered
+        // as tinyTouch before, or that the person picked, is known to be one.
+        let known = port ?? preferredPort
         var candidates = ports
-        if let current = port ?? preferredPort, let index = candidates.firstIndex(of: current) {
+        if let known, let index = candidates.firstIndex(of: known) {
             candidates.swapAt(0, index)
         }
+        var failure: Error?
         for candidate in candidates {
-            if let device = try? await readStatus(candidate) {
-                status = device
+            do {
+                status = try await readStatus(candidate)
                 connection = .connected(port: candidate)
                 preferredPort = candidate
                 return true
+            } catch {
+                if candidate == known { failure = error }
             }
         }
-        connection = .disconnected
+        // tinyTouch is plugged in but didn't answer, so say why rather than
+        // asking for a cable that is already connected.
+        connection = failure.map { .failed($0.localizedDescription) } ?? .disconnected
         status = nil
         return false
     }
@@ -214,12 +331,17 @@ final class DeviceStore {
         return DeviceStatus(raw: raw)
     }
 
-    func refreshStatus() async {
-        guard let port else { return }
+    /// `quiet` is for refreshes nobody asked for, which must not raise an alert.
+    func refreshStatus(quiet: Bool = false) async {
+        guard let port else {
+            // The device may have reconnected while a command held the port.
+            await refreshAll()
+            return
+        }
         do {
             status = try await readStatus(port)
         } catch {
-            report(error)
+            if !quiet { report(error) }
         }
     }
 
@@ -261,7 +383,6 @@ final class DeviceStore {
     }
 
     func refreshHelper() async {
-        let wasRunning = helperRunning
         let agent = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("Library/LaunchAgents/com.tinytouch.helper.plist")
         let plist = (try? Data(contentsOf: agent)).flatMap {
@@ -269,25 +390,13 @@ final class DeviceStore {
         }
         helperInstalled = plist != nil
         helperExecutable = (plist?["ProgramArguments"] as? [String])?.first
-        defer {
-            if wasRunning, !helperRunning, helperInstalled {
-                preferences?.notify("Password entry stopped", "The tinyTouch background helper isn't running. Open tinyTouch to repair it.")
-            }
-        }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["print", "gui/\(getuid())/com.tinytouch.helper"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            let text = String(decoding: data, as: UTF8.self)
-            helperRunning = process.terminationStatus == 0 && text.contains("state = running")
-        } catch {
-            helperRunning = false
+        let service = try? await Subprocess.run(
+            URL(fileURLWithPath: "/bin/launchctl"), ["print", "gui/\(getuid())/com.tinytouch.helper"]
+        )
+        let wasRunning = helperRunning
+        helperRunning = service?.status == 0 && service?.stdout.contains("state = running") == true
+        if wasRunning, !helperRunning, helperInstalled {
+            preferences?.notify("Password entry stopped", "The tinyTouch background helper isn't running. Open tinyTouch to repair it.")
         }
     }
 
@@ -308,9 +417,23 @@ final class DeviceStore {
         return true
     }
 
+    /// `tinytouch mode` saves the mode, then waits for tinyTouch to be reconnected
+    /// before it installs or removes what the mode needs on this Mac.
     func setMode(_ mode: DeviceMode) async {
-        guard await device(["mode", mode.rawValue], approval: "Switch to \(mode.title)") != nil else { return }
-        lastMessage = "Mode saved. Unplug and reconnect tinyTouch to apply it."
+        var saved = false
+        let result = await device(["mode", mode.rawValue], approval: "Switch to \(mode.title)") { line in
+            if TouchPrompt.isModeSaved(line) { saved = true }
+        }
+        if result != nil {
+            lastMessage = "Switched to \(mode.title)."
+        } else if saved, lastError == nil {
+            // Cancelled during the reconnect wait: the device switches at its next
+            // reconnect, but the CLI never got to finish on this Mac.
+            lastMessage = mode == .hid
+                ? "\(mode.title) is saved. Reconnect tinyTouch, then choose Repair if the background helper isn't running."
+                : "\(mode.title) is saved. Reconnect tinyTouch to apply it."
+        }
+        // Also after a failure: the mode may be saved and only the reconnect missing.
         await refreshStatus()
     }
 
@@ -341,62 +464,39 @@ final class DeviceStore {
     // MARK: - Fingers
 
     func enroll(finger: Int, replace: Bool) {
-        guard let port, enrollmentTask == nil else { return }
+        guard let cli, let port, enrollmentRun == nil else { return }
         enrollment = EnrollmentProgress(finger: finger)
         var arguments = ["--port", port, "enroll", String(finger)]
         if replace { arguments.append("--replace") }
-        enrollmentTask = Task {
-            busyCount += 1
-            defer {
-                busyCount -= 1
-                enrollmentTask = nil
-            }
-            do {
-                _ = try await cli?.run(arguments) { line in
-                    Task { @MainActor in self.handleEnrollment(line) }
+        let run = Task {
+            try await cli.run(arguments) { line in self.enrollment?.follow(line) }
+        }
+        enrollmentRun = run
+        Task {
+            var enrolled = false
+            await perform(quiet: true) {
+                defer { enrollmentRun = nil }
+                do {
+                    _ = try await run.value
+                    enrollment?.finish()
+                    enrolled = true
+                } catch is CancellationError {
+                    enrollment = nil
+                } catch {
+                    enrollment?.phase = .failed(error.localizedDescription)
                 }
-                enrollment?.phase = .done
-                await refreshFingers()
-                await refreshStatus()
-            } catch is CancellationError {
-                enrollment = nil
-                await refreshFingers()
-            } catch {
-                enrollment?.phase = .failed(error.localizedDescription)
-                await refreshFingers()
             }
+            await refreshFingers()
+            if enrolled { await refreshStatus() }
         }
     }
 
     func cancelEnrollment() {
-        if let enrollmentTask {
-            enrollmentTask.cancel()
+        if let enrollmentRun {
+            enrollmentRun.cancel()
         } else {
             enrollment = nil
         }
-    }
-
-    private func handleEnrollment(_ line: String) {
-        guard var progress = enrollment else { return }
-        let view: Int = switch progress.phase {
-        case .touch(let view, _), .lift(let view): view
-        default: 1
-        }
-        if line.hasPrefix("Touch the device with a registered finger") {
-            progress.phase = .approving
-        } else if line.hasPrefix("Finger "), line.contains(": View ") {
-            let number = line.components(separatedBy: ": View ").last?
-                .split(separator: " ").first.flatMap { Int($0) } ?? view
-            progress.phase = .touch(view: number, second: false)
-        } else if line.hasPrefix("Touch the sensor again") {
-            progress.phase = .touch(view: view, second: true)
-        } else if line.hasPrefix("Touch the sensor") {
-            progress.phase = .touch(view: view, second: false)
-        } else if line.hasPrefix("Lift your finger") {
-            if case .touch = progress.phase { progress.completedScans += 1 }
-            progress.phase = progress.completedScans >= 8 ? .verifying : .lift(view: view)
-        }
-        enrollment = progress
     }
 
     func deleteFinger(_ finger: Int) async {
@@ -419,14 +519,13 @@ final class DeviceStore {
     /// already trusts the bundled CLI's signature.
     private func migrateHelperIfNeeded() async {
         guard !helperMigrationAttempted, let cli, cli.isBundled, helperInstalled,
-              let helperExecutable, helperExecutable != cli.executable.path else { return }
+              let helperExecutable, !Self.isSameFile(helperExecutable, cli.executable.path) else { return }
         helperMigrationAttempted = true
-        do {
-            _ = try await cli.run(["--app", "_upgrade-helper"])
-            await refreshHelper()
-        } catch {
+        // Any other failure leaves the old helper running; Repair reports the reason.
+        if (try? await installHelper(["--app", "_upgrade-helper"], keychainPassword: nil)) == false {
             needsKeychainPassword = true
         }
+        await refreshHelper()
     }
 
     /// Set when Keychain must be unlocked to let this app's CLI read saved credentials.
@@ -435,56 +534,76 @@ final class DeviceStore {
     /// Reinstalls the helper. Keychain asks for the login password only when the
     /// saved credentials don't trust this CLI yet.
     func repairHelper(keychainPassword: String? = nil) async {
-        guard let cli else { return }
-        let asked = Flag()
         await perform {
             var arguments = ["--app", "repair"]
             if let port { arguments += ["--port", port] }
-            do {
-                _ = try await cli.run(arguments, input: keychainPassword.map { $0 + "\n" }) { line in
-                    if line.contains(#""event": "keychain_password""#) { asked.set() }
-                }
-            } catch {
-                guard asked.isSet, keychainPassword == nil else { throw error }
-                needsKeychainPassword = true
-                return
-            }
-            needsKeychainPassword = false
-            lastMessage = "Background helper reinstalled."
+            needsKeychainPassword = try await !installHelper(arguments, keychainPassword: keychainPassword)
+            if !needsKeychainPassword { lastMessage = "Background helper reinstalled." }
         }
         await refreshHelper()
+    }
+
+    /// Runs a helper install command in app mode. Returns false when it stopped
+    /// only because Keychain wants the login password and none was given.
+    private func installHelper(_ arguments: [String], keychainPassword: String?) async throws -> Bool {
+        guard let cli else { throw CLIError(message: "tinytouch CLI not found.", status: 1) }
+        var askedForPassword = false
+        do {
+            _ = try await cli.run(arguments, input: keychainPassword.map { $0 + "\n" }) { line in
+                if line.contains(#""event": "keychain_password""#) { askedForPassword = true }
+            }
+            return true
+        } catch {
+            guard askedForPassword, keychainPassword == nil else { throw error }
+            return false
+        }
     }
 
     // MARK: - Setup and password
 
     /// Runs `tinytouch setup` without enrollment; the app enrolls fingers itself.
     func runSetup(mode: DeviceMode, password: String?) async -> Bool {
-        guard let cli, let port else { return false }
+        guard let cli, let port else {
+            setupPhase = .failed("tinyTouch isn't connected. Connect it with a USB data cable, then try again.")
+            return false
+        }
         setupPhase = .running("Preparing tinyTouch…")
-        var arguments = ["--app", "--port", port, "setup", "--mode", mode.rawValue, "--skip-enroll"]
-        if mode == .piv, status?.mode == .piv, status?.pivReady == true { arguments.append("--no-pair") }
-        var succeeded = false
+        let arguments = ["--app", "--port", port, "setup", "--mode", mode.rawValue, "--skip-enroll"]
+        let run = Task {
+            try await cli.run(
+                arguments,
+                input: password.map { $0 + "\n" },
+                environment: ["SUDO_ASKPASS": CLI.askpass.path]
+            ) { line in self.handleSetup(line) }
+        }
+        setupRun = run
+        var outcome = SetupPhase.done
         await perform(quiet: true) {
             do {
-                _ = try await cli.run(
-                    arguments,
-                    input: password.map { $0 + "\n" },
-                    environment: ["SUDO_ASKPASS": CLI.askpass.path]
-                ) { line in
-                    Task { @MainActor in self.handleSetup(line) }
-                }
-                succeeded = true
+                _ = try await run.value
+            } catch is CancellationError {
+                outcome = .idle
             } catch {
-                setupPhase = .failed(error.localizedDescription)
+                outcome = .failed(error.localizedDescription)
             }
         }
         touchPrompt = nil
-        if succeeded { setupPhase = .done }
+        if setupRun == run, outcome != .done { setupPhase = outcome }
+        // Setup is done only once the device has been read again: the page after
+        // it depends on the enrolled fingers.
         await refreshAll()
-        return succeeded
+        // Setup was left, or started again, while this run was finishing.
+        guard setupRun == run else { return false }
+        setupRun = nil
+        if outcome == .done { setupPhase = .done }
+        return outcome == .done
     }
 
+    /// Leaves setup: stops the CLI if it is still running, and keeps a run that
+    /// is finishing from reporting into whatever comes next.
     func resetSetup() {
+        setupRun?.cancel()
+        setupRun = nil
         setupPhase = .idle
     }
 
@@ -493,9 +612,11 @@ final class DeviceStore {
               let data = line.dropFirst("@tinytouch ".count).data(using: .utf8),
               let event = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let name = event["event"] as? String else {
-            handlePrompt(line, approval: "Approve setup", step: nil)
+            touchPrompt = TouchPrompt.after(line, current: touchPrompt, approval: "Approve setup", step: nil)
             return
         }
+        // A milestone means the touch that allowed it has already happened.
+        touchPrompt = nil
         switch name {
         case "reconnect_needed": setupPhase = .reconnect
         case "reconnected": setupPhase = .running("Finishing setup…")
@@ -542,16 +663,18 @@ final class DeviceStore {
         input: String? = nil,
         approval: String? = nil,
         step: String? = nil,
-        quiet: Bool = false
-    ) async -> CLIResult? {
+        quiet: Bool = false,
+        onLine: @escaping @MainActor (String) -> Void = { _ in }
+    ) async -> ProcessOutput? {
         guard let cli, let port else { return nil }
-        var result: CLIResult?
+        // One approval at a time: the sheet could not cancel a second one queued behind it.
+        guard approval == nil || approvalTask == nil else { return nil }
+        var result: ProcessOutput?
         await perform(quiet: quiet) {
             let task = Task {
                 try await cli.run(["--port", port] + arguments, input: input) { line in
-                    Task { @MainActor in
-                        self.handlePrompt(line, approval: approval, step: step)
-                    }
+                    self.touchPrompt = TouchPrompt.after(line, current: self.touchPrompt, approval: approval, step: step)
+                    onLine(line)
                 }
             }
             if approval != nil { approvalTask = task }
@@ -562,27 +685,22 @@ final class DeviceStore {
         return result
     }
 
-    /// Cancels a command that is waiting for fingerprint approval.
+    /// Cancels the command that is waiting for fingerprint approval or a reconnect.
     func cancelApproval() {
         approvalTask?.cancel()
+        setupRun?.cancel()
         touchPrompt = nil
-    }
-
-    private func handlePrompt(_ line: String, approval: String?, step: String?) {
-        if line.hasPrefix("Touch the device with a registered finger") {
-            touchPrompt = TouchPrompt(
-                title: approval ?? "Approve on tinyTouch",
-                detail: "Touch the sensor with an enrolled finger.",
-                step: step
-            )
-        } else if line.hasPrefix("Lift your finger"), touchPrompt != nil {
-            touchPrompt?.detail = "Lift your finger."
-        }
     }
 
     private func perform(quiet: Bool = false, _ operation: () async throws -> Void) async {
         busyCount += 1
-        defer { busyCount -= 1 }
+        defer {
+            busyCount -= 1
+            if busyCount == 0, portChangePending {
+                portChangePending = false
+                portsChanged()
+            }
+        }
         do {
             try await operation()
         } catch is CancellationError {
@@ -612,12 +730,9 @@ final class DeviceStore {
     private static func decodePorts(_ json: String) -> [String] {
         (try? JSONDecoder().decode([String].self, from: Data(json.utf8))) ?? []
     }
-}
 
-private final class Flag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value = false
-
-    var isSet: Bool { lock.withLock { value } }
-    func set() { lock.withLock { value = true } }
+    private static func isSameFile(_ first: String, _ second: String) -> Bool {
+        URL(fileURLWithPath: first).resolvingSymlinksInPath().path
+            == URL(fileURLWithPath: second).resolvingSymlinksInPath().path
+    }
 }

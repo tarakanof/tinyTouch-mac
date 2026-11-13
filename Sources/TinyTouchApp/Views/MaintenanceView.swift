@@ -31,10 +31,7 @@ struct MaintenanceView: View {
                 LabeledContent {
                     Picker("Device port", selection: Binding(
                         get: { store.port ?? store.preferredPort ?? "" },
-                        set: { port in
-                            store.preferredPort = port
-                            Task { await store.refreshAll() }
-                        }
+                        set: { port in Task { await store.selectPort(port) } }
                     )) {
                         if store.availablePorts.isEmpty {
                             Text("None").tag("")

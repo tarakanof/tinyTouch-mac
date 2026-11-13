@@ -65,11 +65,11 @@ struct MainView: View {
                 preferences.hasCompletedSetup = true
             }
         }
-        .sheet(item: Binding(
-            get: { store.touchPrompt.map(IdentifiedPrompt.init) },
-            set: { if $0 == nil { store.cancelApproval() } }
-        )) { prompt in
-            TouchPromptSheet(prompt: prompt.prompt)
+        .sheet(isPresented: Binding(
+            get: { store.touchPrompt != nil },
+            set: { if !$0 { store.cancelApproval() } }
+        )) {
+            TouchPromptSheet()
         }
         .sheet(isPresented: Binding(
             get: { store.needsKeychainPassword },
@@ -104,8 +104,13 @@ struct MainView: View {
     }
 
     private func refresh(_ tab: SettingsTab) async {
+        guard store.port != nil else {
+            // Nothing is connected as far as the app knows, so look again.
+            await store.refreshAll()
+            return
+        }
         switch tab {
-        case .general, .lighting: await store.refreshStatus()
+        case .general, .lighting: await store.refreshStatus(quiet: true)
         case .fingers: await store.refreshFingers()
         case .computers: await store.refreshHosts()
         case .activity: await store.refreshLogs()
@@ -162,11 +167,6 @@ extension SettingsTab {
     }
 }
 
-private struct IdentifiedPrompt: Identifiable {
-    let prompt: TouchPrompt
-    var id: String { prompt.title + (prompt.step ?? "") }
-}
-
 /// Shows a placeholder for tabs that need a connected device.
 struct DeviceGate<Content: View>: View {
     @Environment(DeviceStore.self) private var store
@@ -182,13 +182,17 @@ struct DeviceGate<Content: View>: View {
     }
 }
 
+/// One sheet for the whole command, so a prompt that changes, from touch to
+/// reconnect, updates in place.
 struct TouchPromptSheet: View {
     @Environment(DeviceStore.self) private var store
-    let prompt: TouchPrompt
+    /// Keeps the text on screen while the sheet animates away.
+    @State private var shown = TouchPrompt(title: "", detail: "")
 
     var body: some View {
+        let prompt = store.touchPrompt ?? shown
         VStack(spacing: 16) {
-            Image(systemName: "touchid")
+            Image(systemName: prompt.symbol)
                 .font(.system(size: 56, weight: .light))
                 .foregroundStyle(.tint)
                 .symbolEffect(.pulse)
@@ -211,6 +215,9 @@ struct TouchPromptSheet: View {
         }
         .padding(28)
         .frame(width: 300)
+        .onChange(of: store.touchPrompt, initial: true) {
+            if let current = store.touchPrompt { shown = current }
+        }
     }
 }
 
@@ -219,7 +226,7 @@ struct TouchPromptCard: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "touchid")
+            Image(systemName: prompt.symbol)
                 .font(.title)
                 .foregroundStyle(.tint)
                 .symbolEffect(.pulse)
@@ -255,6 +262,7 @@ private struct ToastView: View {
 
 /// Form footer for staged edits; every saved change needs a fingerprint.
 struct ApplyBar: View {
+    @Environment(DeviceStore.self) private var store
     let changeCount: Int
     let revert: () -> Void
     let apply: () -> Void
@@ -275,6 +283,7 @@ struct ApplyBar: View {
             Button("Revert", action: revert)
             Button("Apply", action: apply)
                 .keyboardShortcut(.defaultAction)
+                .disabled(store.isApproving)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
