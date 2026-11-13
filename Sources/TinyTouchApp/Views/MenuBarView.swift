@@ -210,12 +210,24 @@ struct ConnectionBadge: View {
     @Environment(DeviceStore.self) private var store
     var showsPort = true
     var font = Font.caption
+    /// Shows a spinner in place of the dot while a command runs, in the same space.
+    var showsActivity = false
 
     var body: some View {
         HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
+            ZStack {
+                if showsActivity, store.isBusy {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 7, height: 7)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .frame(width: 12, height: 12)
             Text(text)
                 .font(font)
                 .foregroundStyle(.secondary)
