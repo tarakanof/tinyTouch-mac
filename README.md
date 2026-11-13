@@ -163,9 +163,15 @@ is inside the app.
 
 ### Update
 
-Download the new disk image, quit tinyTouch from its menu bar item, and drag the new
-**tinyTouch** onto **Applications**, replacing the old one. Your fingerprints,
-settings and saved password stay as they are.
+tinyTouch updates itself. It checks for a new version once a day and asks before
+installing it, or choose **Check for Updates…** in the app menu or on the About
+page. Every update is signed and verified before it's installed. Your fingerprints,
+settings and saved password stay as they are, and the background helper moves to
+the new version on its own.
+
+Version 0.2.0 can't update itself: download the latest disk image once, quit
+tinyTouch from its menu bar item, and drag the new **tinyTouch** onto
+**Applications**, replacing the old one.
 
 ### Build from source
 

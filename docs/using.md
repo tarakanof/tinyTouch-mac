@@ -38,9 +38,26 @@ once the device reports that slot empty; it is not tied to one tinyTouch.
   and installing the `tinytouch` command into `~/.local/bin`. The command is a link to
   the CLI inside the app, so it stays current when you update the app.
 - **Menu Bar** chooses what the menu bar item shows and which shortcuts it offers.
-- **About** shows versions, authors and links.
+- **Updates**, in Application settings, turns the daily check for a new version on
+  or off, and whether a new version downloads in the background and installs when
+  tinyTouch quits. **Check Now** looks right away.
+- **About** shows versions, authors and links, and has **Check for Updates…**.
 - With the menu bar icon off, the app shows a Dock icon and quits when its window
   closes. Password entry keeps working, because the background helper runs on its own.
+
+## Updates
+
+The app updates itself with [Sparkle](https://sparkle-project.org). It reads the
+feed attached to the latest GitHub release,
+`releases/latest/download/appcast.xml`. The feed and each disk image are signed
+with the project's EdDSA key, and the app refuses an unsigned feed or an update
+that fails the check (`SURequireSignedFeed`, `SUVerifyUpdateBeforeExtraction`). The
+new app must also carry the same Developer ID signature.
+
+After an update, the running helper still has the replaced CLI loaded. On the first
+launch of a new build, the app reinstalls the helper from its own CLI with
+`tinytouch --app _upgrade-helper`, which checks that Keychain still trusts it
+first. Debug and demo builds never update themselves.
 
 ## The background helper
 
