@@ -53,10 +53,10 @@ final class SettingsDraft {
     }
 }
 
+/// A number with a slider for coarse changes and a field for exact ones.
 struct NumberSettingRow: View {
     let title: String
     let symbol: String
-    let color: Color
     var info: String?
     var unit = "ms"
     @Binding var value: Int
@@ -65,18 +65,28 @@ struct NumberSettingRow: View {
 
     var body: some View {
         LabeledContent {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
+                if range.lowerBound < range.upperBound {
+                    Slider(
+                        value: Binding(
+                            get: { Double(value) },
+                            set: { value = Int(($0 / Double(step)).rounded()) * step }
+                        ),
+                        in: Double(range.lowerBound)...Double(range.upperBound)
+                    )
+                    .frame(width: 130)
+                    .accessibilityLabel(title)
+                }
                 TextField(title, value: $value, format: .number.grouping(.never))
                     .labelsHidden()
                     .multilineTextAlignment(.trailing)
-                    .frame(width: 64)
+                    .frame(width: 52)
                 Text(unit)
                     .foregroundStyle(.secondary)
-                Stepper(title, value: $value, in: range, step: step)
-                    .labelsHidden()
+                    .frame(width: 22, alignment: .leading)
             }
         } label: {
-            SettingLabel(title: title, symbol: symbol, color: color, info: info)
+            SettingLabel(title: title, symbol: symbol, info: info)
         }
     }
 }

@@ -20,6 +20,9 @@ struct MenuBarView: View {
                 if !MenuItem.status.filter(preferences.shows).isEmpty {
                     details(status)
                 }
+                if preferences.shows(.light) {
+                    lightSwitch
+                }
             } else {
                 DisconnectedMessage()
             }
@@ -54,15 +57,35 @@ struct MenuBarView: View {
             }
         }
         .padding(12)
-        .frame(width: 250)
+        .frame(width: 260)
+        .motion(.snappy, value: store.touchPrompt)
+    }
+
+    /// Changes the lighting mode from the menu; like every device change it asks for a touch.
+    private var lightSwitch: some View {
+        HStack {
+            Text("Light")
+                .foregroundStyle(.secondary)
+            Spacer()
+            Picker("Sensor light", selection: Binding(
+                get: { store.config["led"] ?? LEDMode.on.rawValue },
+                set: { mode in Task { _ = await store.apply([("led", mode)]) } }
+            )) {
+                Text("On").tag(LEDMode.on.rawValue)
+                Text("Sign-In").tag(LEDMode.onlyAuth.rawValue)
+                Text("Off").tag(LEDMode.off.rawValue)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .disabled(store.isApproving)
+        }
+        .font(.callout)
     }
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "touchid")
-                .font(.title2)
-                .foregroundStyle(.tint)
-                .frame(width: 32, height: 32)
+            SensorView(light: store.idleLight, size: 36)
             VStack(alignment: .leading, spacing: 1) {
                 Text("tinyTouch")
                     .font(.headline)
@@ -185,6 +208,8 @@ private struct OptionalShortcut: ViewModifier {
 
 struct ConnectionBadge: View {
     @Environment(DeviceStore.self) private var store
+    var showsPort = true
+    var font = Font.caption
 
     var body: some View {
         HStack(spacing: 5) {
@@ -192,8 +217,9 @@ struct ConnectionBadge: View {
                 .fill(color)
                 .frame(width: 7, height: 7)
             Text(text)
-                .font(.caption)
+                .font(font)
                 .foregroundStyle(.secondary)
+                .contentTransition(.interpolate)
         }
     }
 
@@ -202,7 +228,8 @@ struct ConnectionBadge: View {
         case .noCLI: "CLI not installed"
         case .searching: "Looking for device…"
         case .disconnected: "Not connected"
-        case .connected(let port): "Connected · \(port.replacingOccurrences(of: "/dev/cu.", with: ""))"
+        case .connected(let port):
+            showsPort ? "Connected · \(port.replacingOccurrences(of: "/dev/cu.", with: ""))" : "Connected"
         case .failed: "Connection error"
         }
     }

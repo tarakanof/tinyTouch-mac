@@ -22,6 +22,14 @@ struct TinyTouchApp: App {
                 Button("Settings…") { delegate.showMainWindow(tab: .app) }
                     .keyboardShortcut(",")
             }
+            CommandGroup(before: .toolbar) {
+                let tabs = SettingsTab.device + SettingsTab.application
+                ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
+                    Button(tab.title) { delegate.showMainWindow(tab: tab) }
+                        .keyboardShortcut(index < 9 ? KeyEquivalent(Character("\(index + 1)")) : "0")
+                }
+                Divider()
+            }
         }
 
         MenuBarExtra(isInserted: Binding(

@@ -14,14 +14,13 @@ struct MaintenanceView: View {
                     SettingLabel(
                         title: "tinytouch CLI",
                         symbol: "terminal.fill",
-                        color: .gray,
                         info: store.cli.map { $0.isBundled ? "Built into this app." : "Using \($0.executable.path)." }
                     )
                 }
                 LabeledContent {
                     Text(store.status?.firmware ?? "—").foregroundStyle(.secondary)
                 } label: {
-                    SettingLabel(title: "Firmware", symbol: "memorychip.fill", color: .gray)
+                    SettingLabel(title: "Firmware", symbol: "memorychip.fill")
                 }
             } header: {
                 SectionHeader("Software")
@@ -43,7 +42,7 @@ struct MaintenanceView: View {
                     .labelsHidden()
                     .fixedSize()
                 } label: {
-                    SettingLabel(title: "Device port", symbol: "cable.connector", color: .gray)
+                    SettingLabel(title: "Device port", symbol: "cable.connector")
                 }
                 LabeledContent {
                     HStack {
@@ -62,7 +61,6 @@ struct MaintenanceView: View {
                     SettingLabel(
                         title: "HID helper",
                         symbol: "gearshape.2.fill",
-                        color: .gray,
                         info: "Repair reinstalls the helper and re-authorizes Keychain access. Saved passwords are kept."
                             + (store.helperExecutable.map { "\n\nRuns \($0)." } ?? "")
                     )
@@ -73,7 +71,6 @@ struct MaintenanceView: View {
                     SettingLabel(
                         title: "Setup",
                         symbol: "wand.and.stars",
-                        color: .purple,
                         info: "Registers this Mac for password entry or pairs the smart card identity."
                     )
                 }
@@ -89,7 +86,6 @@ struct MaintenanceView: View {
                     SettingLabel(
                         title: "Factory reset",
                         symbol: "exclamationmark.triangle.fill",
-                        color: .red,
                         info: "Erases fingerprints, keys, registered computers and settings on the device."
                     )
                 }

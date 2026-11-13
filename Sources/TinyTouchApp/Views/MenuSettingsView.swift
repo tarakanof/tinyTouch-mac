@@ -11,14 +11,12 @@ struct MenuSettingsView: View {
                 ToggleRow(
                     title: "Show in menu bar",
                     symbol: "menubar.rectangle",
-                    color: .blue,
                     info: "When off, tinyTouch opens as a regular window and quits when you close it. Password entry keeps working either way, because the background helper runs on its own.",
                     isOn: $preferences.showInMenuBar
                 )
                 ToggleRow(
                     title: "Cross out icon when disconnected",
                     symbol: "touchid",
-                    color: .pink,
                     isOn: $preferences.showsDisconnectedIcon
                 )
                 .disabled(!preferences.showInMenuBar)
@@ -33,6 +31,14 @@ struct MenuSettingsView: View {
                     }
                 } header: {
                     SectionHeader("Status")
+                }
+
+                Section {
+                    ForEach(MenuItem.controls) { item in
+                        itemToggle(item)
+                    }
+                } header: {
+                    SectionHeader("Controls", help: "Changing the light from the menu asks for a touch, like any other device change.")
                 }
 
                 Section {
@@ -62,7 +68,6 @@ struct MenuSettingsView: View {
         ToggleRow(
             title: item.title,
             symbol: item.symbol,
-            color: .gray,
             isOn: Binding(get: { preferences.shows(item) }, set: { preferences.setShows(item, $0) })
         )
     }

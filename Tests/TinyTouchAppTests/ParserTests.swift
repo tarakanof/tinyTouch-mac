@@ -201,3 +201,80 @@ Finger 2 is enrolled with all four views.
 @Test func liftWithoutAPromptShowsNothing() {
     #expect(TouchPrompt.after("Lift your finger away from the sensor.", current: nil, approval: nil, step: nil) == nil)
 }
+
+@Test func groupsATouchWithWhatItLedTo() {
+    let entries = ActivityEntry.group(DeviceEvent.parse([
+        "LOG ms=420 event=usb_attached value=0",
+        "LOG ms=61200 event=touch_detected value=0",
+        "LOG ms=61650 event=finger_matched value=5",
+        "LOG ms=61660 event=hid_requested value=5",
+        "LOG ms=62210 event=hid_typed value=5",
+        "LOG ms=90000 event=touch_detected value=0",
+        "LOG ms=90600 event=finger_no_match value=0",
+        "LOG ms=200000 event=finger_matched value=1",
+    ]))
+    #expect(entries.map(\.title) == ["Finger matched", "No match", "Password typed", "USB connected"])
+    #expect(entries.map(\.finger) == [1, nil, 2, nil])
+    #expect(entries.map(\.isProblem) == [false, true, false, false])
+    #expect(entries[2].steps.dropLast() == ["Touch detected", "Finger 2 matched", "Password requested", "Password typed"])
+    // The duration is formatted for the reader's locale: "1.0 s" or "1,0 s".
+    #expect(entries[2].steps.last?.hasSuffix(" s") == true)
+    #expect(entries[2].uptimeText == "1:01")
+    #expect(entries[3].steps.isEmpty)
+    #expect(entries[1].belongs(to: .problems))
+    #expect(!entries[2].belongs(to: .problems))
+    #expect(entries[2].matches("requested"))
+}
+
+@Test func aLateEventStartsItsOwnRow() {
+    let entries = ActivityEntry.group(DeviceEvent.parse([
+        "LOG ms=1000 event=touch_detected value=0",
+        "LOG ms=40000 event=hid_failed value=1",
+    ]))
+    #expect(entries.map(\.title) == ["Password request failed", "Touch detected"])
+}
+
+@Test func plansOneTouchPerConfigCommand() {
+    #expect(DeviceStore.writes(for: []).isEmpty)
+    #expect(DeviceStore.writes(for: [("typing_delay_ms", "7")]) == [["config", "typing_delay_ms", "7"]])
+    #expect(DeviceStore.writes(for: [("led_idle_color", "red"), ("led", "off"), ("led_idle_effect", "flash")]) == [
+        ["config", "led", "off"],
+        ["config", "led_idle_color", "red", "led_idle_effect", "flash"],
+    ])
+}
+
+@Test func themesStageEveryLightingColor() {
+    for preset in LEDPreset.allCases {
+        let settings = preset.settings
+        #expect(settings.count == 6)
+        #expect(settings["led_idle_cycles"] == "0")
+        for key in ["led_idle_color", "led_idle_end_color", "led_success_color", "led_failure_color"] {
+            #expect(LEDColor(rawValue: settings[key] ?? "") != nil)
+        }
+        #expect(LEDEffect(rawValue: settings["led_idle_effect"] ?? "") != nil)
+    }
+    #expect(LEDPreset.sunset.settings["led_failure_color"] == "purple")
+}
+
+@Test func lightsTheRingByEffect() {
+    #expect(SensorLight.off.frame(at: 1) == nil)
+    #expect(!SensorLight.off.animates)
+    #expect(SensorLight(color: .blue).frame(at: 3)?.brightness == 1)
+    let flash = SensorLight(color: .red, effect: .flash)
+    #expect(flash.frame(at: 0.1)?.brightness == 1)
+    #expect(flash.frame(at: 0.6)?.brightness == 0.12)
+    let breathe = SensorLight(color: .blue, endColor: .blue, effect: .breathe)
+    #expect(breathe.frame(at: 0)?.brightness == 0.25)
+    #expect(breathe.frame(at: 1.7)?.brightness == 1)
+}
+
+@Test func onlyEventsThatCarryATemplateNameAFinger() {
+    let events = DeviceEvent.parse([
+        "LOG ms=1000 event=piv_presence_granted value=5",
+        // The value of a key operation is the smart card key (0x9A), not a finger.
+        "LOG ms=1200 event=piv_crypto_ok value=154",
+        "LOG ms=30000 event=piv_crypto_rejected value=157",
+    ])
+    #expect(events.map(\.finger) == [nil, nil, 2])
+    #expect(ActivityEntry.group(events).map(\.finger) == [nil, 2])
+}

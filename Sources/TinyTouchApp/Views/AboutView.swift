@@ -34,15 +34,15 @@ struct AboutView: View {
             }
 
             Section("Links") {
-                LinkRow(title: "Documentation", symbol: "book.fill", color: .blue,
+                LinkRow(title: "Documentation", symbol: "book.fill",
                         url: "https://docs.tinytouch.dev/customer/setup")
-                LinkRow(title: "CLI reference", symbol: "terminal.fill", color: .gray,
+                LinkRow(title: "CLI reference", symbol: "terminal.fill",
                         url: "https://docs.tinytouch.dev/reference/cli")
-                LinkRow(title: "tinyTouch on GitHub", symbol: "chevron.left.forwardslash.chevron.right", color: .indigo,
+                LinkRow(title: "tinyTouch on GitHub", symbol: "chevron.left.forwardslash.chevron.right",
                         url: "https://github.com/ZimengXiong/tinyTouch")
-                LinkRow(title: "This build's source", symbol: "arrow.triangle.branch", color: .purple,
+                LinkRow(title: "This build's source", symbol: "arrow.triangle.branch",
                         url: "https://github.com/tarakanof/tinyTouch")
-                LinkRow(title: "Sponsor the project", symbol: "heart.fill", color: .pink,
+                LinkRow(title: "Sponsor the project", symbol: "heart.fill",
                         url: "https://github.com/sponsors/ZimengXiong")
             }
 
@@ -65,13 +65,12 @@ struct AboutView: View {
 private struct LinkRow: View {
     let title: String
     let symbol: String
-    let color: Color
     let url: String
 
     var body: some View {
         Link(destination: URL(string: url)!) {
             HStack {
-                SettingLabel(title: title, symbol: symbol, color: color)
+                SettingLabel(title: title, symbol: symbol)
                 Spacer()
                 Image(systemName: "arrow.up.right")
                     .foregroundStyle(.secondary)

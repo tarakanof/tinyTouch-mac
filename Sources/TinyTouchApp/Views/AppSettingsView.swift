@@ -12,7 +12,6 @@ struct AppSettingsView: View {
                 ToggleRow(
                     title: "Open at login",
                     symbol: "power",
-                    color: .green,
                     isOn: Binding(
                         get: { preferences.openAtLogin },
                         set: { enabled in
@@ -29,7 +28,6 @@ struct AppSettingsView: View {
                 ToggleRow(
                     title: "Notifications",
                     symbol: "bell.badge.fill",
-                    color: .red,
                     info: "Tells you when tinyTouch connects or disconnects, and when password entry stops working. Only while the app is running.",
                     isOn: Binding(
                         get: { preferences.notificationsEnabled },
@@ -60,7 +58,6 @@ struct AppSettingsView: View {
                     SettingLabel(
                         title: "tinytouch command",
                         symbol: "terminal.fill",
-                        color: .gray,
                         info: "Adds the tinytouch command to ~/.local/bin so you can use it in Terminal. It runs the copy inside this app."
                     )
                 }

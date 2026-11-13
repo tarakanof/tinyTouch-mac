@@ -151,6 +151,11 @@ enum LEDColor: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+extension LEDColor {
+    /// The colour of the lit ring; nil when the ring is dark.
+    var light: Color? { self == .off ? nil : swatch }
+}
+
 enum LEDEffect: String, CaseIterable, Identifiable, Sendable {
     case steady, breathe, flash
     case fadeIn = "fade-in"
@@ -190,6 +195,22 @@ enum LEDPreset: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
+
+    /// What `tinytouch led preset` writes; mirrors `LED_PRESETS` in the CLI. Staging
+    /// these saves a theme together with the other lighting edits.
+    var settings: [String: String] {
+        let (idle, end, success, failure, effect): (LEDColor, LEDColor, LEDColor, LEDColor, LEDEffect) = switch self {
+        case .default: (.blue, .blue, .green, .red, .steady)
+        case .ocean: (.blue, .cyan, .cyan, .red, .breathe)
+        case .neon: (.purple, .cyan, .green, .red, .breathe)
+        case .sunset: (.red, .yellow, .yellow, .purple, .breathe)
+        }
+        return [
+            "led_idle_color": idle.rawValue, "led_idle_end_color": end.rawValue,
+            "led_success_color": success.rawValue, "led_failure_color": failure.rawValue,
+            "led_idle_effect": effect.rawValue, "led_idle_cycles": "0",
+        ]
+    }
 }
 
 struct Finger: Identifiable, Sendable {
@@ -309,8 +330,41 @@ struct DeviceEvent: Identifiable, Sendable {
         case "task_started": "Device started"
         case "piv_visible": "Smart card visible"
         case "piv_hidden": "Smart card hidden"
+        case "piv_pin_typed": "PIN typed"
+        case "piv_pin_failed": "PIN entry failed"
+        case "piv_presence_granted": "Smart card unlocked"
+        case "piv_crypto_ok": "Smart card key used"
+        case "piv_crypto_rejected": "Smart card key refused"
+        case "piv_discovery_timeout": "Smart card wasn't picked up"
+        case "finger_capture_cancelled": "Touch too short"
+        case "sensor_probe_failed": "Sensor not responding"
+        case "sensor_recovered": "Sensor recovered"
+        case "sensor_recover_failed": "Sensor recovery failed"
         default: name.replacingOccurrences(of: "_", with: " ").capitalized
         }
+    }
+
+    /// Events whose value is the matched fingerprint template. Other events use the
+    /// value for something else: `piv_crypto_ok` logs the smart card key it used.
+    private static let namesWithATemplate: Set<String> = [
+        "finger_matched", "hid_requested", "hid_typing", "hid_typed", "hid_failed",
+        "piv_presence_granted", "piv_discovery_timeout", "piv_pin_typed", "piv_pin_failed",
+    ]
+
+    /// The finger this event is about, when the device recorded one.
+    var finger: Int? {
+        Self.namesWithATemplate.contains(name) && value > 0 ? fingerForTemplate : nil
+    }
+
+    var isProblem: Bool {
+        name == "finger_no_match" || name.hasSuffix("_failed") || name.hasSuffix("_error")
+            || name.hasSuffix("_rejected") || name.hasSuffix("_timeout")
+    }
+
+    /// True for what a touch sets off: the match, then password or smart card work.
+    var followsTouch: Bool {
+        (name.hasPrefix("finger_") || name.hasPrefix("hid_") || name.hasPrefix("piv_"))
+            && name != "piv_hidden"
     }
 
     var symbol: String {
@@ -353,7 +407,7 @@ struct DeviceEvent: Identifiable, Sendable {
         case .all: true
         case .fingerprints: name.hasPrefix("finger_") || name == "touch_detected"
         case .passwords: name.hasPrefix("hid_")
-        case .problems: name == "finger_no_match" || name.hasSuffix("_failed") || name.hasSuffix("_error")
+        case .problems: isProblem
         case .device: !name.hasPrefix("finger_") && !name.hasPrefix("hid_") && name != "touch_detected"
         }
     }
@@ -364,6 +418,86 @@ struct DeviceEvent: Identifiable, Sendable {
         let seconds = uptime / 1000
         let duration = Duration.seconds(seconds)
         return duration.formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond))
+    }
+}
+
+/// One row in Activity: a touch with everything it led to, or a single device event.
+struct ActivityEntry: Identifiable, Sendable {
+    /// Oldest first.
+    let events: [DeviceEvent]
+
+    var id: Int { events[0].id }
+    var uptimeText: String { events[0].uptimeText }
+    var finger: Int? { events.lazy.compactMap(\.finger).first }
+    var isProblem: Bool { events.contains(where: \.isProblem) }
+
+    /// The most telling event: a failure first, then how far the touch got.
+    private var headline: DeviceEvent {
+        let order = [
+            "hid_failed", "piv_pin_failed", "piv_crypto_rejected", "piv_discovery_timeout",
+            "hid_typed", "hid_sent", "piv_pin_typed", "piv_crypto_ok", "piv_presence_granted",
+            "finger_no_match", "finger_matched", "finger_capture_cancelled",
+        ]
+        for name in order {
+            if let event = events.first(where: { $0.name == name }) { return event }
+        }
+        return events[0]
+    }
+
+    var title: String {
+        headline.name == "finger_matched" ? "Finger matched" : headline.title
+    }
+
+    var symbol: String { events.count > 1 || headline.followsTouch ? outcomeSymbol : headline.symbol }
+    var tint: Color { isProblem ? .red : (succeeded ? .green : .secondary) }
+
+    private var succeeded: Bool {
+        ["hid_typed", "hid_sent", "piv_pin_typed", "piv_crypto_ok", "piv_presence_granted", "finger_matched"]
+            .contains(headline.name)
+    }
+
+    private var outcomeSymbol: String {
+        isProblem ? "xmark" : (succeeded ? "checkmark" : "touchid")
+    }
+
+    /// What happened in order, shown only when a touch led to more than one event.
+    var steps: [String] {
+        guard events.count > 1 else { return [] }
+        var steps = events.map(\.title)
+        if let first = events.first, let last = events.last, last.uptime > first.uptime {
+            let seconds = Double(last.uptime - first.uptime) / 1000
+            steps.append(seconds.formatted(.number.precision(.fractionLength(1))) + " s")
+        }
+        return steps
+    }
+
+    func belongs(to category: DeviceEvent.Category) -> Bool {
+        events.contains { $0.belongs(to: category) }
+    }
+
+    func matches(_ search: String) -> Bool {
+        title.localizedCaseInsensitiveContains(search)
+            || events.contains { $0.title.localizedCaseInsensitiveContains(search) }
+    }
+
+    /// How long after a touch its follow-up events still belong to it.
+    private static let window = 15_000
+
+    /// Folds a newest-first event list into rows, newest first. A touch and the
+    /// match, password or smart card events that follow it become one row.
+    static func group(_ events: [DeviceEvent]) -> [ActivityEntry] {
+        var groups: [[DeviceEvent]] = []
+        var open = false
+        for event in events.reversed() {
+            if event.name != "touch_detected", event.followsTouch, open, let start = groups.last?.first,
+               event.uptime >= start.uptime, event.uptime - start.uptime <= window {
+                groups[groups.count - 1].append(event)
+            } else {
+                groups.append([event])
+                open = event.followsTouch || event.name == "touch_detected"
+            }
+        }
+        return groups.reversed().map(ActivityEntry.init)
     }
 }
 

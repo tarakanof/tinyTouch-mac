@@ -6,11 +6,13 @@ import UserNotifications
 /// Optional rows and shortcuts in the menu bar window.
 enum MenuItem: String, CaseIterable, Identifiable {
     case mode, fingerprints, helper, firmware, port
+    case light
     case fingerprintsShortcut, activityShortcut
 
     var id: String { rawValue }
 
     static let status: [MenuItem] = [.mode, .fingerprints, .helper, .firmware, .port]
+    static let controls: [MenuItem] = [.light]
     static let shortcuts: [MenuItem] = [.fingerprintsShortcut, .activityShortcut]
     static let defaults: Set<MenuItem> = [.mode, .fingerprints, .helper, .firmware, .fingerprintsShortcut]
 
@@ -21,6 +23,7 @@ enum MenuItem: String, CaseIterable, Identifiable {
         case .helper: "Background helper or smart card"
         case .firmware: "Firmware version"
         case .port: "USB port"
+        case .light: "Sensor light switch"
         case .fingerprintsShortcut: "Fingerprints…"
         case .activityShortcut: "Activity…"
         }
@@ -33,6 +36,7 @@ enum MenuItem: String, CaseIterable, Identifiable {
         case .helper: "gearshape.2.fill"
         case .firmware: "memorychip.fill"
         case .port: "cable.connector"
+        case .light: "lightbulb.fill"
         case .fingerprintsShortcut: "touchid"
         case .activityShortcut: "list.bullet.rectangle"
         }
@@ -67,6 +71,16 @@ final class AppPreferences {
         didSet { UserDefaults.standard.set(hasCompletedSetup, forKey: "hasCompletedSetup") }
     }
 
+    /// Names people give finger slots and registered computers. The device stores
+    /// neither, so they live on this Mac.
+    private var fingerNames: [String: String] {
+        didSet { UserDefaults.standard.set(fingerNames, forKey: "fingerNames") }
+    }
+
+    private var computerNames: [String: String] {
+        didSet { UserDefaults.standard.set(computerNames, forKey: "computerNames") }
+    }
+
     private(set) var loginItemStatus: SMAppService.Status = .notRegistered
     private(set) var notificationsDenied = false
     private(set) var commandLineToolPath: String?
@@ -88,6 +102,8 @@ final class AppPreferences {
         menuItems = Set((defaults.stringArray(forKey: "menuItems") ?? []).compactMap(MenuItem.init))
         showsDisconnectedIcon = defaults.bool(forKey: "showsDisconnectedIcon")
         hasCompletedSetup = defaults.bool(forKey: "hasCompletedSetup")
+        fingerNames = defaults.dictionary(forKey: "fingerNames") as? [String: String] ?? [:]
+        computerNames = defaults.dictionary(forKey: "computerNames") as? [String: String] ?? [:]
         // An installed helper means setup already ran, possibly from the CLI.
         if !hasCompletedSetup, FileManager.default.fileExists(atPath: NSHomeDirectory() + "/Library/LaunchAgents/com.tinytouch.helper.plist") {
             hasCompletedSetup = true
@@ -113,6 +129,40 @@ final class AppPreferences {
 
     func setShows(_ item: MenuItem, _ shown: Bool) {
         if shown { menuItems.insert(item) } else { menuItems.remove(item) }
+    }
+
+    // MARK: - Names
+
+    func fingerName(_ finger: Int) -> String {
+        fingerNames[String(finger)] ?? "Finger \(finger)"
+    }
+
+    func hasFingerName(_ finger: Int) -> Bool {
+        fingerNames[String(finger)] != nil
+    }
+
+    /// An empty or nil name goes back to "Finger N".
+    func setFingerName(_ name: String?, for finger: Int) {
+        fingerNames[String(finger)] = Self.cleaned(name)
+    }
+
+    /// Forgets the name of every slot that isn't in `fingers`.
+    func keepFingerNames(for fingers: [Int]) {
+        let kept = fingerNames.filter { fingers.contains(Int($0.key) ?? 0) }
+        if kept.count != fingerNames.count { fingerNames = kept }
+    }
+
+    func computerName(_ identifier: String) -> String? {
+        computerNames[identifier]
+    }
+
+    func setComputerName(_ name: String?, for identifier: String) {
+        computerNames[identifier] = Self.cleaned(name)
+    }
+
+    private static func cleaned(_ name: String?) -> String? {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(40))
     }
 
     // MARK: - Open at login

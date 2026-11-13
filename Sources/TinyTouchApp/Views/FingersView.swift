@@ -2,38 +2,82 @@ import SwiftUI
 
 struct FingersView: View {
     @Environment(DeviceStore.self) private var store
+    @Environment(AppPreferences.self) private var preferences
+    @State private var selection = 1
     @State private var pendingDelete: Finger?
     @State private var pendingReplace: Finger?
+    @State private var renaming: Finger?
+    @State private var newName = ""
+    @State private var passwordFinger: Finger?
+
+    private var selected: Finger {
+        store.fingers.fingers[safe: selection - 1] ?? Finger(number: 1, state: .empty)
+    }
 
     var body: some View {
-        Form {
-            Section {
-                ForEach(store.fingers.fingers) { finger in
-                    FingerRow(
-                        finger: finger,
-                        enroll: { start(finger) },
-                        delete: { pendingDelete = finger }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 6) {
+                    Text("\(store.fingers.enrolledCount) of 10 enrolled")
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                    InfoButton(
+                        text: "Each finger is scanned from four angles: left edge, right edge, top and center. Enrolling, replacing or deleting needs a touch from a finger that's already enrolled.\n\nNames are kept on this Mac.",
+                        symbol: "questionmark.circle"
                     )
                 }
-            } header: {
-                SectionHeader(
-                    title: "Fingerprints",
-                    help: "Each finger is scanned from four angles: left edge, right edge, top and center. Enrolling, replacing or deleting needs a touch from a finger that's already enrolled."
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 5), spacing: 10) {
+                    ForEach(store.fingers.fingers) { finger in
+                        FingerTile(
+                            finger: finger,
+                            name: preferences.fingerName(finger.number),
+                            isSelected: finger.number == selection
+                        ) {
+                            selection = finger.number
+                        }
+                        .contextMenu { actions(for: finger) }
+                    }
+                }
+                FingerDetail(
+                    finger: selected,
+                    name: preferences.fingerName(selected.number),
+                    isLastMatch: store.lastMatchedFinger == selected.number
                 ) {
-                    Text("\(store.fingers.enrolledCount) of 10")
-                        .foregroundStyle(.secondary)
+                    actions(for: selected)
                 }
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .frame(maxWidth: 680)
+            .frame(maxWidth: .infinity)
         }
-        .formStyle(.grouped)
+        .onAppear {
+            if let first = store.fingers.fingers.first(where: \.isOccupied) { selection = first.number }
+        }
+        .motion(.bouncy(duration: 0.35), value: selection)
+        .motion(.smooth(duration: 0.3), value: store.fingers.fingers.map(\.state))
         .sheet(item: Binding(
             get: { store.enrollment.map { EnrollmentID(finger: $0.finger) } },
             set: { if $0 == nil { store.cancelEnrollment() } }
         )) { _ in
             EnrollmentSheet()
         }
+        .sheet(item: $passwordFinger) { finger in
+            ChangePasswordSheet(finger: finger.number)
+        }
+        .alert(
+            "Rename \(renaming.map { preferences.fingerName($0.number) } ?? "")",
+            isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
+            presenting: renaming
+        ) { finger in
+            TextField("Name", text: $newName)
+            Button("Save") { preferences.setFingerName(newName, for: finger.number) }
+            Button("Cancel", role: .cancel) {}
+        } message: { finger in
+            Text("For example, Right Index. Leave it empty to go back to Finger \(finger.number).")
+        }
         .confirmationDialog(
-            "Delete finger \(pendingDelete?.number ?? 0)?",
+            "Delete \(pendingDelete.map { preferences.fingerName($0.number) } ?? "")?",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
             presenting: pendingDelete
         ) { finger in
@@ -44,7 +88,7 @@ struct FingersView: View {
             Text(deleteMessage)
         }
         .confirmationDialog(
-            "Replace finger \(pendingReplace?.number ?? 0)?",
+            "Scan \(pendingReplace.map { preferences.fingerName($0.number) } ?? "") again?",
             isPresented: Binding(get: { pendingReplace != nil }, set: { if !$0 { pendingReplace = nil } }),
             presenting: pendingReplace
         ) { finger in
@@ -56,19 +100,34 @@ struct FingersView: View {
         }
     }
 
+    @ViewBuilder
+    private func actions(for finger: Finger) -> some View {
+        if finger.isOccupied {
+            Button("Rename…", systemImage: "pencil") {
+                newName = preferences.hasFingerName(finger.number) ? preferences.fingerName(finger.number) : ""
+                renaming = finger
+            }
+            Button("Scan Again…", systemImage: "arrow.triangle.2.circlepath") { pendingReplace = finger }
+                .disabled(store.isApproving)
+            if store.status?.mode == .hid {
+                Button("Password…", systemImage: "key") { passwordFinger = finger }
+                    .help("Type a different password for this finger")
+            }
+            Button("Delete…", systemImage: "trash", role: .destructive) { pendingDelete = finger }
+                .disabled(store.isApproving)
+        } else {
+            Button("Enroll…", systemImage: "plus") {
+                store.enroll(finger: finger.number, replace: false)
+            }
+            .disabled(store.isApproving)
+        }
+    }
+
     private var deleteMessage: String {
         if store.fingers.enrolledCount == 1 {
             return "This is the only enrolled finger. Without it, you can't approve changes until you enroll a new one."
         }
         return "All four views for this finger are removed from the sensor."
-    }
-
-    private func start(_ finger: Finger) {
-        if finger.isOccupied {
-            pendingReplace = finger
-        } else {
-            store.enroll(finger: finger.number, replace: false)
-        }
     }
 }
 
@@ -77,90 +136,169 @@ private struct EnrollmentID: Identifiable {
     var id: Int { finger }
 }
 
-private struct FingerRow: View {
-    let finger: Finger
-    let enroll: () -> Void
-    let delete: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            SettingIcon(
-                symbol: finger.isOccupied ? "touchid" : "plus",
-                color: finger.isOccupied ? badge.color : .gray.opacity(0.6)
-            )
-            Text("Finger \(finger.number)")
-            StatusBadge(text: badge.text, color: badge.color, symbol: badge.symbol)
-            Spacer()
-            if finger.isOccupied {
-                Button("Replace", systemImage: "arrow.triangle.2.circlepath", action: enroll)
-                    .help("Scan this finger again")
-                Button("Delete", systemImage: "trash", role: .destructive, action: delete)
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(.red)
-                    .help("Delete finger \(finger.number)")
-            } else {
-                Button("Enroll", systemImage: "plus", action: enroll)
-            }
-        }
-        .contextMenu {
-            if finger.isOccupied {
-                Button("Replace…", systemImage: "arrow.triangle.2.circlepath", action: enroll)
-                Button("Delete…", systemImage: "trash", role: .destructive, action: delete)
-            } else {
-                Button("Enroll…", systemImage: "plus", action: enroll)
-            }
-        }
-    }
-
-    private var badge: (text: String, color: Color, symbol: String?) {
-        switch finger.state {
-        case .empty: ("Not enrolled", .secondary, nil)
-        case .enrolled: ("Enrolled", .green, "checkmark")
-        case .partial(let views): ("Partial · \(views)/4", .orange, "exclamationmark.triangle.fill")
-        case .cleanupPending: ("Reconnect to clean up", .orange, "exclamationmark.triangle.fill")
+extension Finger {
+    var tint: Color {
+        switch state {
+        case .empty: .secondary
+        case .enrolled: .green
+        case .partial, .cleanupPending: .orange
         }
     }
 }
 
+/// One of the ten slots on the sensor.
+private struct FingerTile: View {
+    let finger: Finger
+    let name: String
+    let isSelected: Bool
+    let select: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: select) {
+            VStack(spacing: 6) {
+                Image(systemName: finger.isOccupied ? "touchid" : "plus")
+                    .font(.system(size: finger.isOccupied ? 28 : 16, weight: .light))
+                    .foregroundStyle(finger.isOccupied ? AnyShapeStyle(finger.tint) : AnyShapeStyle(.tertiary))
+                    .frame(height: 32)
+                    .contentTransition(.symbolEffect(.replace))
+                Text(finger.isOccupied ? name : "\(finger.number)")
+                    .font(.caption)
+                    .lineLimit(1)
+                    .foregroundStyle(finger.isOccupied ? .primary : .tertiary)
+                    .padding(.horizontal, 4)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 82)
+            .background(background, in: .rect(cornerRadius: 16))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
+                        style: StrokeStyle(lineWidth: isSelected ? 2 : 1, dash: finger.isOccupied || isSelected ? [] : [4, 3])
+                    )
+            }
+            .contentShape(.rect(cornerRadius: 16))
+            .scaleEffect(isSelected ? 1.04 : 1)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(finger.isOccupied ? name : "Empty slot \(finger.number)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var background: AnyShapeStyle {
+        if finger.isOccupied {
+            return AnyShapeStyle(finger.tint.opacity(isSelected ? 0.16 : (hovering ? 0.13 : 0.09)))
+        }
+        return AnyShapeStyle(.quaternary.opacity(hovering || isSelected ? 0.5 : 0))
+    }
+}
+
+/// The selected slot: its name, its state, and what can be done with it.
+private struct FingerDetail<Actions: View>: View {
+    let finger: Finger
+    let name: String
+    let isLastMatch: Bool
+    @ViewBuilder let actions: Actions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                SettingIcon(
+                    symbol: finger.isOccupied ? "touchid" : "plus",
+                    color: finger.isOccupied ? finger.tint : .gray,
+                    size: 36
+                )
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(finger.isOccupied ? name : "Slot \(finger.number)")
+                        .font(.title3.weight(.semibold))
+                    Text(subtitle)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if isLastMatch {
+                    StatusBadge(text: "Matched most recently", color: .green, symbol: "checkmark")
+                        .help("The newest match in the device log, as of the last time Activity was read.")
+                }
+            }
+            HStack(spacing: 8) {
+                actions
+            }
+            .labelStyle(.titleOnly)
+            .buttonBorderShape(.capsule)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 16))
+        .id(finger.number)
+        .transition(.blurReplace)
+    }
+
+    private var subtitle: String {
+        switch finger.state {
+        case .empty: "Empty. Enroll a finger here."
+        case .enrolled: "Slot \(finger.number) · all four views saved"
+        case .partial(let views): "Slot \(finger.number) · \(views) of 4 views saved. Scan it again to finish."
+        case .cleanupPending: "Unplug tinyTouch and plug it back in to finish cleaning up this slot."
+        }
+    }
+}
+
+// MARK: - Enrollment
+
 struct EnrollmentSheet: View {
     @Environment(DeviceStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
+    @Environment(AppPreferences.self) private var preferences
+    @State private var name = ""
 
     var body: some View {
         let progress = store.enrollment ?? EnrollmentProgress(finger: 1)
-        VStack(spacing: 18) {
-            Text("Enroll Finger \(progress.finger)")
+        VStack(spacing: 16) {
+            Text("Enroll \(preferences.fingerName(progress.finger))")
                 .font(.title3.weight(.semibold))
 
-            FingerprintViews(progress: progress)
-                .frame(width: 150, height: 170)
+            ScanProgress(progress: progress)
+                .frame(width: 176, height: 176)
 
             VStack(spacing: 4) {
                 Text(title(progress.phase))
                     .font(.headline)
+                    .contentTransition(.interpolate)
                 Text(detail(progress.phase))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(minHeight: 48)
+            .frame(minHeight: 52, alignment: .top)
 
-            ProgressView(value: Double(progress.completedScans), total: Double(EnrollmentProgress.totalScans))
-                .frame(width: 220)
+            if progress.phase == .done, !preferences.hasFingerName(progress.finger) {
+                TextField("Name, such as Right Index", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { finish(progress.finger) }
+                    .transition(.blurReplace)
+            }
 
-            HStack {
-                switch progress.phase {
-                case .done, .failed:
-                    Button("Done") { store.enrollment = nil }
-                        .keyboardShortcut(.defaultAction)
-                default:
-                    Button("Cancel", role: .cancel) { store.cancelEnrollment() }
-                        .keyboardShortcut(.cancelAction)
-                }
+            switch progress.phase {
+            case .done, .failed:
+                Button("Done") { finish(progress.finger) }
+                    .keyboardShortcut(.defaultAction)
+            default:
+                Button("Cancel", role: .cancel) { store.cancelEnrollment() }
+                    .keyboardShortcut(.cancelAction)
             }
         }
         .padding(28)
         .frame(width: 360)
         .interactiveDismissDisabled()
+        .motion(.smooth(duration: 0.3), value: progress.phase)
+    }
+
+    private func finish(_ finger: Int) {
+        if store.enrollment?.phase == .done, !name.isEmpty {
+            preferences.setFingerName(name, for: finger)
+        }
+        store.enrollment = nil
     }
 
     private func title(_ phase: EnrollmentProgress.Phase) -> String {
@@ -190,108 +328,86 @@ struct EnrollmentSheet: View {
     }
 }
 
-private struct FingerprintViews: View {
+/// A fingerprint that fills as scans land, inside a ring with one arc per view:
+/// left edge, right edge, top and center (drawn at the bottom).
+private struct ScanProgress: View {
     let progress: EnrollmentProgress
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulsing = false
+
+    /// Where each view's arc is centered, in degrees clockwise from three o'clock.
+    private static let centers: [Double] = [180, 0, 270, 90]
+    private static let stroke = StrokeStyle(lineWidth: 7, lineCap: .round)
 
     var body: some View {
         ZStack {
-            Image(systemName: symbol)
+            ForEach(0..<4, id: \.self) { index in
+                let scans = min(max(progress.completedScans - index * 2, 0), 2)
+                arc(index, filled: 1)
+                    .stroke(index == activeView ? AnyShapeStyle(.tint.opacity(0.35)) : AnyShapeStyle(.quaternary), style: Self.stroke)
+                    .opacity(index == activeView && pulsing && !reduceMotion ? 0.45 : 1)
+                    .animation(
+                        index == activeView && !reduceMotion
+                            ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .default,
+                        value: pulsing
+                    )
+                arc(index, filled: Double(scans) / 2)
+                    .stroke(scans == 2 ? AnyShapeStyle(.green) : AnyShapeStyle(.tint), style: Self.stroke)
+                    .opacity(scans == 0 ? 0 : 1)
+            }
+            center
+                .frame(width: 92, height: 92)
+        }
+        .onAppear { pulsing = true }
+        .motion(.smooth(duration: 0.45), value: progress.completedScans)
+        .accessibilityElement()
+        .accessibilityLabel("Scan progress")
+        .accessibilityValue("\(progress.completedScans) of \(EnrollmentProgress.totalScans)")
+    }
+
+    private func arc(_ index: Int, filled: Double) -> some Shape {
+        Circle()
+            .inset(by: 4)
+            .trim(from: 0.018, to: 0.018 + 0.214 * filled)
+            .rotation(.degrees(Self.centers[index] - 45))
+    }
+
+    @ViewBuilder
+    private var center: some View {
+        switch progress.phase {
+        case .failed:
+            Image(systemName: "xmark.circle")
                 .resizable()
                 .scaledToFit()
                 .fontWeight(.ultraLight)
-                .foregroundStyle(tint)
-                .contentTransition(.symbolEffect(.replace))
-                .symbolEffect(.pulse, isActive: isWaitingForTouch)
-            GeometryReader { proxy in
-                ForEach(0..<4, id: \.self) { index in
-                    ViewMarker(state: markerState(index))
-                        .position(markerPosition(index, in: proxy.size))
-                }
+                .foregroundStyle(.red)
+                .transition(.blurReplace)
+        default:
+            let done = progress.phase == .done
+            let fraction = Double(progress.completedScans) / Double(EnrollmentProgress.totalScans)
+            ZStack {
+                print.foregroundStyle(.quaternary)
+                print
+                    .foregroundStyle(done ? AnyShapeStyle(.green) : AnyShapeStyle(.tint))
+                    .mask(alignment: .bottom) {
+                        Rectangle().frame(height: 92 * fraction)
+                    }
+                    .symbolEffect(.bounce, value: done)
             }
         }
     }
 
-    private var symbol: String {
-        switch progress.phase {
-        case .done: "checkmark.circle"
-        case .failed: "xmark.circle"
-        default: "touchid"
-        }
-    }
-
-    private var tint: AnyShapeStyle {
-        switch progress.phase {
-        case .done: AnyShapeStyle(.green)
-        case .failed: AnyShapeStyle(.red)
-        default: AnyShapeStyle(.tint)
-        }
-    }
-
-    private var isWaitingForTouch: Bool {
-        if case .touch = progress.phase { return true }
-        if case .approving = progress.phase { return true }
-        return false
+    private var print: some View {
+        Image(systemName: "touchid")
+            .resizable()
+            .scaledToFit()
+            .fontWeight(.ultraLight)
     }
 
     private var activeView: Int? {
         switch progress.phase {
         case .touch(let view, _), .lift(let view): view - 1
         default: nil
-        }
-    }
-
-    private func markerState(_ index: Int) -> ViewMarker.State {
-        let scans = min(max(progress.completedScans - index * 2, 0), 2)
-        if scans == 2 { return .done }
-        if activeView == index { return .active(scans) }
-        return .pending
-    }
-
-    private func markerPosition(_ index: Int, in size: CGSize) -> CGPoint {
-        switch index {
-        case 0: CGPoint(x: 0, y: size.height * 0.55)
-        case 1: CGPoint(x: size.width, y: size.height * 0.55)
-        case 2: CGPoint(x: size.width / 2, y: 0)
-        default: CGPoint(x: size.width / 2, y: size.height * 0.55)
-        }
-    }
-}
-
-private struct ViewMarker: View {
-    enum State: Equatable {
-        case pending, active(Int), done
-    }
-
-    let state: State
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(background)
-                .frame(width: 26, height: 26)
-            switch state {
-            case .done:
-                Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.white)
-            case .active(let scans):
-                HStack(spacing: 3) {
-                    ForEach(0..<2, id: \.self) { scan in
-                        Circle()
-                            .fill(scan < scans ? AnyShapeStyle(.white) : AnyShapeStyle(.white.opacity(0.4)))
-                            .frame(width: 5, height: 5)
-                    }
-                }
-            case .pending:
-                EmptyView()
-            }
-        }
-        .animation(.snappy, value: state)
-    }
-
-    private var background: AnyShapeStyle {
-        switch state {
-        case .pending: AnyShapeStyle(.quaternary)
-        case .active: AnyShapeStyle(.tint)
-        case .done: AnyShapeStyle(.green)
         }
     }
 }

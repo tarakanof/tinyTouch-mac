@@ -3,7 +3,9 @@ import Foundation
 import Observation
 
 enum SettingsTab: String, Hashable {
-    case general, lighting, fingers, computers, activity, maintenance, app, menu, about
+    case overview, fingers, lighting
+    case signIn = "sign-in"
+    case computers, activity, maintenance, app, menu, about
 }
 
 enum Connection: Equatable {
@@ -25,10 +27,23 @@ struct TouchPrompt: Equatable {
         case reconnect
     }
 
+    enum Phase: Equatable {
+        case waiting
+        /// The touch is over, accepted or not, and the command is still running.
+        case finishing
+        /// The command succeeded; shown briefly before the prompt goes away.
+        case approved
+    }
+
     var title: String
     var detail: String
     var step: String?
     var kind = Kind.touch
+    var phase = Phase.waiting
+    /// The device command that put this prompt up, and the only one that may change
+    /// or end it. Commands run one after another, so a read queued behind an
+    /// approval produces output while that approval's prompt is still showing.
+    var owner: UUID?
 
     var symbol: String {
         switch kind {
@@ -158,7 +173,7 @@ final class DeviceStore {
     var enrollment: EnrollmentProgress?
     var lastError: String?
     var lastMessage: String?
-    var settingsTab: SettingsTab = .general
+    var settingsTab: SettingsTab = .overview
     var preferences: AppPreferences?
     /// Set when someone asks to run setup again from the main window.
     var setupRequest: DeviceMode??
@@ -176,6 +191,11 @@ final class DeviceStore {
     private var portChangePending = false
     private var hasConnected = false
     private var helperMigrationAttempted = false
+    private var approvedPromptTask: Task<Void, Never>?
+    #if DEBUG
+    private(set) var isDemo = false
+    private(set) var demoScene = ""
+    #endif
 
     var isBusy: Bool { busyCount > 0 }
     /// True while a command that needs a touch is running.
@@ -209,11 +229,20 @@ final class DeviceStore {
            let tab = SettingsTab(rawValue: arguments[index + 1]) {
             settingsTab = tab
         }
+        #if DEBUG
+        // Here rather than in `start`: views begin refreshing as soon as they appear.
+        if let index = arguments.firstIndex(of: "--demo") {
+            loadDemo(arguments.dropFirst(index + 1).first ?? "")
+        }
+        #endif
     }
 
     // MARK: - Lifecycle
 
     func start() {
+        #if DEBUG
+        if isDemo { return }
+        #endif
         guard portWatcher == nil else { return }
         portWatcher = PortWatcher { [weak self] in self?.portsChanged() }
         portWatcher?.start()
@@ -267,6 +296,9 @@ final class DeviceStore {
     // MARK: - Reading state
 
     func refreshAll() async {
+        #if DEBUG
+        if isDemo { return }
+        #endif
         guard let cli else { connection = .noCLI; return }
         if cliVersion.isEmpty,
            let version = try? await cli.runDetached(["--version"]) {
@@ -359,6 +391,12 @@ final class DeviceStore {
     func refreshFingers() async {
         guard let result = await device(["fingers"], quiet: true) else { return }
         fingers = FingerInventory.parse(result.lines)
+        // Names follow the inventory: a slot emptied here, from another Mac or with
+        // the CLI must not hand its name to the next finger enrolled in it. The
+        // CLI ends every full inventory with the "Space for" line.
+        if result.lines.contains(where: { $0.hasPrefix("Space for ") }) {
+            preferences?.keepFingerNames(for: fingers.fingers.filter(\.isOccupied).map(\.number))
+        }
     }
 
     func refreshHosts() async {
@@ -383,6 +421,9 @@ final class DeviceStore {
     }
 
     func refreshHelper() async {
+        #if DEBUG
+        if isDemo { return }
+        #endif
         let agent = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("Library/LaunchAgents/com.tinytouch.helper.plist")
         let plist = (try? Data(contentsOf: agent)).flatMap {
@@ -402,12 +443,27 @@ final class DeviceStore {
 
     // MARK: - Writing settings
 
-    /// Applies setting changes one at a time; each write needs its own fingerprint approval.
+    /// The `tinytouch config` commands that save `changes`, one fingerprint approval
+    /// each. The CLI writes several settings in one session; only the lighting mode
+    /// has its own device checks and is saved alone.
+    nonisolated static func writes(for changes: [(name: String, value: String)]) -> [[String]] {
+        let alone = changes.filter { $0.name == "led" }
+        let together = changes.filter { $0.name != "led" }
+        var commands = alone.map { ["config", $0.name, $0.value] }
+        if !together.isEmpty {
+            commands.append(["config"] + together.flatMap { [$0.name, $0.value] })
+        }
+        return commands
+    }
+
     func apply(_ changes: [(name: String, value: String)]) async -> Bool {
-        for (index, change) in changes.enumerated() {
-            let step = changes.count > 1 ? "Change \(index + 1) of \(changes.count)" : nil
-            let title = SettingTitles.title(for: change.name).lowercased()
-            guard await device(["config", change.name, change.value], approval: "Save \(title)", step: step) != nil else {
+        let commands = Self.writes(for: changes)
+        for (index, command) in commands.enumerated() {
+            let step = commands.count > 1 ? "Touch \(index + 1) of \(commands.count)" : nil
+            let title = changes.count == 1
+                ? "Save \(SettingTitles.title(for: changes[0].name).lowercased())"
+                : "Save \(changes.count) settings"
+            guard await device(command, approval: title, step: step) != nil else {
                 await refreshStatus()
                 return false
             }
@@ -446,12 +502,6 @@ final class DeviceStore {
     func setKeyboardLayout(_ layout: String) async {
         guard await device(["keyboard-layout", layout]) != nil else { return }
         await refreshLayout()
-    }
-
-    func applyPreset(_ preset: LEDPreset) async {
-        guard await device(["led", "preset", preset.rawValue], approval: "Apply \(preset.title) lighting") != nil else { return }
-        lastMessage = "\(preset.title) lighting applied."
-        await refreshStatus()
     }
 
     func preview(color: LEDColor, effect: LEDEffect, durationMs: Int) async {
@@ -500,9 +550,15 @@ final class DeviceStore {
     }
 
     func deleteFinger(_ finger: Int) async {
-        guard await device(["delete", String(finger)], approval: "Delete finger \(finger)") != nil else { return }
-        lastMessage = "Finger \(finger) deleted."
+        let name = preferences?.fingerName(finger) ?? "Finger \(finger)"
+        guard await device(["delete", String(finger)], approval: "Delete \(name)") != nil else { return }
+        lastMessage = "\(name) deleted."
         await refreshFingers()
+    }
+
+    /// The finger behind the newest match in the device log, once the log has been read.
+    var lastMatchedFinger: Int? {
+        events.first { $0.name == "finger_matched" }?.finger
     }
 
     // MARK: - Computers and maintenance
@@ -669,11 +725,18 @@ final class DeviceStore {
         guard let cli, let port else { return nil }
         // One approval at a time: the sheet could not cancel a second one queued behind it.
         guard approval == nil || approvalTask == nil else { return nil }
+        let command = UUID()
+        if approval != nil, touchPrompt?.phase == .approved {
+            // The next touch of the same Apply: its prompt replaces the confirmation
+            // of the last one, without a gap between them.
+            approvedPromptTask?.cancel()
+            touchPrompt?.owner = command
+        }
         var result: ProcessOutput?
         await perform(quiet: quiet) {
             let task = Task {
                 try await cli.run(["--port", port] + arguments, input: input) { line in
-                    self.touchPrompt = TouchPrompt.after(line, current: self.touchPrompt, approval: approval, step: step)
+                    self.followPrompt(line, command: command, approval: approval, step: step)
                     onLine(line)
                 }
             }
@@ -681,12 +744,47 @@ final class DeviceStore {
             defer { if approval != nil { approvalTask = nil } }
             result = try await task.value
         }
-        touchPrompt = nil
+        if touchPrompt?.owner == command {
+            if result != nil, touchPrompt?.kind == .touch {
+                showApproved()
+            } else {
+                touchPrompt = nil
+            }
+        }
         return result
+    }
+
+    /// Moves the prompt of the device command `command` on by one line of its output.
+    /// A prompt another command put up is left alone.
+    private func followPrompt(_ line: String, command: UUID, approval: String?, step: String?) {
+        let mine = touchPrompt?.owner == command ? touchPrompt : nil
+        if var next = TouchPrompt.after(line, current: mine, approval: approval, step: step) {
+            next.owner = command
+            touchPrompt = next
+        } else if let mine {
+            if mine.kind != .touch {
+                touchPrompt = nil
+            } else if mine.phase == .waiting {
+                // Only the exit status says whether the touch was accepted, so the
+                // prompt stays until then instead of vanishing here.
+                touchPrompt?.phase = .finishing
+            }
+        }
+    }
+
+    /// Ends a touch prompt on a visible confirmation instead of having it vanish.
+    private func showApproved() {
+        touchPrompt?.phase = .approved
+        approvedPromptTask?.cancel()
+        approvedPromptTask = Task {
+            try? await Task.sleep(for: .seconds(0.9))
+            if !Task.isCancelled, touchPrompt?.phase == .approved { touchPrompt = nil }
+        }
     }
 
     /// Cancels the command that is waiting for fingerprint approval or a reconnect.
     func cancelApproval() {
+        guard touchPrompt?.phase != .approved else { return }
         approvalTask?.cancel()
         setupRun?.cancel()
         touchPrompt = nil
@@ -736,3 +834,77 @@ final class DeviceStore {
             == URL(fileURLWithPath: second).resolvingSymlinksInPath().path
     }
 }
+
+#if DEBUG
+/// Sample state for looking at the interface without a device: `--demo [scene]`,
+/// where scene is `disconnected`, `prompt`, `approved`, `enroll`, `piv`, `setup`
+/// or `unsaved` (Lighting opens with an edit waiting to be applied).
+/// Nothing here runs the CLI, so it is safe next to an installed tinyTouch.
+extension DeviceStore {
+    private func loadDemo(_ scene: String) {
+        isDemo = true
+        demoScene = scene
+        cli = nil
+        cliVersion = "0.1.36"
+        availablePorts = ["/dev/cu.usbmodem1101"]
+        helperInstalled = true
+        helperRunning = true
+        keyboardLayout = "auto"
+        catalog = [
+            "typing_delay_ms": 1...100, "touch_cooldown_ms": 100...5000,
+            "piv_delay_ms": 0...5000, "led_feedback_ms": 50...2000,
+        ].reduce(into: [:]) { catalog, entry in
+            let json = #"{"default": 1, "values": {"minimum": \#(entry.value.lowerBound), "maximum": \#(entry.value.upperBound)}, "description": ""}"#
+            if var spec = try? JSONDecoder().decode(SettingSpec.self, from: Data(json.utf8)) {
+                spec.name = entry.key
+                catalog[entry.key] = spec
+            }
+        }
+        guard scene != "disconnected" else {
+            connection = .disconnected
+            return
+        }
+        status = DeviceStatus(raw: [
+            "firmware": "0.1.36", "build": "demo", "mode": scene == "piv" ? "piv" : "hid",
+            "piv": "ready", "sensor": "ready", "hosts": "2", "fingerprints": "14", "custom_config": "1",
+            "led": "on", "led_idle_color": "5", "led_idle_end_color": "3", "led_success_color": "2",
+            "led_failure_color": "4", "led_idle_effect": "1", "led_idle_cycles": "0", "led_feedback_ms": "350",
+            "typing_delay_ms": "4", "submit_enter": "1", "touch_cooldown_ms": "800", "piv_delay_ms": "50",
+            "piv_auto_type": "1", "piv_touch": "off",
+        ])
+        connection = .connected(port: "/dev/cu.usbmodem1101")
+        fingers = FingerInventory.parse([
+            "Finger 1: Enrolled: 4 fingerprint views.", "Finger 2: Enrolled: 4 fingerprint views.",
+            "Finger 3: Enrolled: 4 fingerprint views.", "Finger 5: Partially enrolled: 2 of 4 fingerprint views.",
+            "Space for 6 additional fingers.",
+        ])
+        hosts = HostList(identifiers: ["a1b2c3d4e5f60718", "0123456789abcdef"], capacity: 8, local: "a1b2c3d4e5f60718")
+        events = DeviceEvent.parse([
+            "LOG ms=155 event=task_started value=0", "LOG ms=420 event=usb_attached value=0",
+            "LOG ms=910 event=sensor_probe_ok value=14",
+            "LOG ms=61200 event=touch_detected value=0", "LOG ms=61650 event=finger_matched value=5",
+            "LOG ms=61660 event=hid_requested value=5", "LOG ms=61790 event=hid_response value=0",
+            "LOG ms=61800 event=hid_typing value=5", "LOG ms=62210 event=hid_typed value=5",
+            "LOG ms=1830100 event=touch_detected value=0", "LOG ms=1830700 event=finger_no_match value=0",
+            "LOG ms=1834000 event=touch_detected value=0", "LOG ms=1834500 event=finger_matched value=1",
+            "LOG ms=1834510 event=hid_requested value=1", "LOG ms=1834650 event=hid_response value=0",
+            "LOG ms=1834660 event=hid_typing value=1", "LOG ms=1835100 event=hid_typed value=1",
+        ])
+        switch scene {
+        case "prompt":
+            touchPrompt = TouchPrompt(title: "Save 3 settings", detail: "Touch the sensor with an enrolled finger.")
+        case "approved":
+            touchPrompt = TouchPrompt(title: "Save 3 settings", detail: "", phase: .approved)
+        case "enroll":
+            var progress = EnrollmentProgress(finger: 4)
+            progress.completedScans = 5
+            progress.phase = .touch(view: 3, second: true)
+            enrollment = progress
+        case "setup":
+            setupRequest = .some(nil)
+        default:
+            break
+        }
+    }
+}
+#endif

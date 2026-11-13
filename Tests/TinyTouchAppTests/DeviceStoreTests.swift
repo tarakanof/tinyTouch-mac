@@ -37,7 +37,16 @@ private struct FakeCLI {
             echo "Waiting for the device to disconnect from USB."
             pause slow-mode 5
             echo "HID mode is active." ;;
-          *" fingers") echo "Finger 1: Enrolled: 4 fingerprint views."; echo "Space for 9 additional fingers." ;;
+          *" config "*)
+            echo "$*" >> "$dir/commands"
+            echo "Touch the device with a registered finger to unlock configuration."
+            pause slow-config 0.3
+            if [ -f "$dir/no-match" ]; then echo "Error: No enrolled fingerprint matched." >&2; exit 1; fi
+            echo "Updated the settings." ;;
+          *" fingers")
+            echo "Finger 1: Enrolled: 4 fingerprint views."
+            pause slow-fingers 0.3
+            echo "Space for 9 additional fingers." ;;
           *" keyboard-layout") echo "HID keyboard layout: auto." ;;
           *" setup "*) pause slow-setup 1; echo '@tinytouch {"event": "ready", "mode": "hid"}' ;;
           *) echo "Error: unexpected command: $*" >&2; exit 1 ;;
@@ -57,6 +66,12 @@ private struct FakeCLI {
 
     func remove() {
         try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// The `config` commands received so far, without the port.
+    var configCommands: [String] {
+        let log = (try? String(contentsOf: directory.appendingPathComponent("commands"), encoding: .utf8)) ?? ""
+        return log.split(separator: "\n").map { $0.replacingOccurrences(of: "--port \(port) ", with: "") }
     }
 }
 
@@ -204,4 +219,87 @@ private func wait(until condition: () -> Bool) async throws {
     #expect(store.lastMessage?.hasPrefix("Password (HID) is saved.") == true)
     #expect(store.lastError == nil)
     #expect(!store.isApproving)
+}
+
+@MainActor
+@Test func savesSeveralSettingsWithOneTouchAndEndsOnAConfirmation() async throws {
+    let fake = try FakeCLI()
+    defer { fake.remove() }
+    let store = DeviceStore(cli: fake.cli)
+    await store.refreshAll()
+    fake.set("slow-config")
+    let apply = Task {
+        await store.apply([("led", "off"), ("led_idle_color", "purple"), ("typing_delay_ms", "7")])
+    }
+    try await wait { store.touchPrompt?.phase == .waiting }
+    #expect(store.touchPrompt?.title == "Save 3 settings")
+    #expect(store.touchPrompt?.step == "Touch 1 of 2")
+    #expect(await apply.value)
+    // The lighting mode is saved alone; everything else shares one command and one touch.
+    #expect(fake.configCommands == ["config led off", "config led_idle_color purple typing_delay_ms 7"])
+    #expect(store.touchPrompt?.phase == .approved)
+    #expect(store.lastMessage == "3 settings saved.")
+    // An approved prompt is on its way out and can't be cancelled into an error.
+    store.cancelApproval()
+    #expect(store.touchPrompt?.phase == .approved)
+    try await wait { store.touchPrompt == nil }
+}
+
+@MainActor
+@Test func aRefusedTouchLeavesNoConfirmation() async throws {
+    let fake = try FakeCLI()
+    defer { fake.remove() }
+    let store = DeviceStore(cli: fake.cli)
+    await store.refreshAll()
+    fake.set("no-match")
+    #expect(await store.apply([("typing_delay_ms", "7")]) == false)
+    #expect(store.touchPrompt == nil)
+    #expect(store.lastError == "No enrolled fingerprint matched.")
+    #expect(store.lastMessage == nil)
+}
+
+@MainActor
+@Test func aReadQueuedBehindAnApprovalLeavesItsPromptAlone() async throws {
+    let fake = try FakeCLI()
+    defer { fake.remove() }
+    let store = DeviceStore(cli: fake.cli)
+    await store.refreshAll()
+    fake.set("slow-config")
+    fake.set("slow-fingers")
+    let apply = Task { await store.apply([("typing_delay_ms", "7")]) }
+    try await wait { store.touchPrompt?.phase == .waiting }
+    // Queued behind the approval, as when a tab opens while the prompt is up.
+    var readDone = false
+    Task {
+        await store.refreshFingers()
+        readDone = true
+    }
+    var approved = false
+    var wentBack = false
+    while !readDone {
+        let phase = store.touchPrompt?.phase
+        if phase == .approved { approved = true }
+        if approved, phase != nil, phase != .approved { wentBack = true }
+        try await Task.sleep(for: .milliseconds(2))
+    }
+    #expect(await apply.value)
+    #expect(approved)
+    // The read's output is not the approval's: "Approved" never returns to "Finishing…".
+    #expect(!wentBack)
+}
+
+@MainActor
+@Test func aNameDoesNotOutliveItsFinger() async throws {
+    let fake = try FakeCLI()
+    defer { fake.remove() }
+    let preferences = AppPreferences()
+    defer { preferences.keepFingerNames(for: []) }
+    preferences.setFingerName("Right index", for: 1)
+    // Slot 2 was emptied somewhere else: from another Mac, or with the CLI.
+    preferences.setFingerName("Left thumb", for: 2)
+    let store = DeviceStore(cli: fake.cli)
+    store.preferences = preferences
+    await store.refreshAll()
+    #expect(preferences.fingerName(1) == "Right index")
+    #expect(!preferences.hasFingerName(2))
 }

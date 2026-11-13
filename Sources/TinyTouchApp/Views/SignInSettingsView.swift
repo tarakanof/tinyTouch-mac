@@ -1,6 +1,7 @@
 import SwiftUI
 
-struct GeneralSettingsView: View {
+/// How tinyTouch signs in: the mode, then password entry or smart card settings.
+struct SignInSettingsView: View {
     @Environment(DeviceStore.self) private var store
     @State private var draft = SettingsDraft(keys: [
         "typing_delay_ms", "submit_enter", "touch_cooldown_ms", "piv_delay_ms", "piv_auto_type",
@@ -10,34 +11,29 @@ struct GeneralSettingsView: View {
     @State private var changingPassword = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                deviceSection
-                modeSection
-                if store.status?.mode == .hid {
-                    hidSection
-                } else {
-                    pivSection
-                }
-                Section {
-                    NumberSettingRow(
-                        title: "Touch cooldown",
-                        symbol: "hourglass",
-                        color: .pink,
-                        info: "Minimum time between two touch actions, so one long touch doesn't trigger twice.",
-                        value: draft.int("touch_cooldown_ms", in: range("touch_cooldown_ms")),
-                        range: range("touch_cooldown_ms"),
-                        step: 50
-                    )
-                } header: {
-                    SectionHeader("Touch")
-                }
+        Form {
+            modeSection
+            if store.status?.mode == .hid {
+                hidSection
+            } else {
+                pivSection
             }
-            .formStyle(.grouped)
-
-            ApplyBar(changeCount: draft.changes.count, revert: draft.revert) {
-                Task { _ = await store.apply(draft.changes) }
+            Section {
+                NumberSettingRow(
+                    title: "Touch cooldown",
+                    symbol: "hourglass",
+                    info: "Minimum time between two touch actions, so one long touch doesn't trigger twice.",
+                    value: draft.int("touch_cooldown_ms", in: range("touch_cooldown_ms")),
+                    range: range("touch_cooldown_ms"),
+                    step: 50
+                )
+            } header: {
+                SectionHeader("Touch")
             }
+        }
+        .formStyle(.grouped)
+        .applyBar(draft) {
+            Task { _ = await store.apply(draft.changes) }
         }
         .onAppear { draft.load(store.config) }
         .onChange(of: store.config) { draft.load(store.config) }
@@ -62,50 +58,6 @@ struct GeneralSettingsView: View {
         }
     }
 
-    private var deviceSection: some View {
-        Section {
-            HStack(spacing: 14) {
-                Image(systemName: "touchid")
-                    .font(.system(size: 26, weight: .regular))
-                    .foregroundStyle(.white)
-                    .frame(width: 48, height: 48)
-                    .background(
-                        LinearGradient(colors: [.blue, .purple], startPoint: .top, endPoint: .bottom),
-                        in: .rect(cornerRadius: 12)
-                    )
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("tinyTouch").font(.title3.weight(.semibold))
-                    ConnectionBadge()
-                }
-                Spacer()
-            }
-            if let status = store.status {
-                LabeledContent {
-                    Text("\(status.firmware) (\(status.build))")
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                } label: {
-                    SettingLabel(title: "Firmware", symbol: "memorychip.fill", color: .gray)
-                }
-                LabeledContent {
-                    StatusBadge(
-                        text: status.sensorReady ? "Ready" : "Offline",
-                        color: status.sensorReady ? .green : .orange
-                    )
-                } label: {
-                    SettingLabel(title: "Sensor", symbol: "touchid", color: .green)
-                }
-                if status.ota != "idle" {
-                    LabeledContent {
-                        StatusBadge(text: status.ota == "staged" ? "Reconnect to install" : "Writing…", color: .blue)
-                    } label: {
-                        SettingLabel(title: "Firmware update", symbol: "arrow.down.circle.fill", color: .blue)
-                    }
-                }
-            }
-        }
-    }
-
     private var modeSection: some View {
         Section {
             Picker(selection: Binding(
@@ -116,7 +68,7 @@ struct GeneralSettingsView: View {
                     Text(mode.title).tag(mode)
                 }
             } label: {
-                SettingLabel(title: "Mode", symbol: "lock.shield.fill", color: .blue)
+                SettingLabel(title: "Mode", symbol: "lock.shield.fill")
             }
             .pickerStyle(.segmented)
         } header: {
@@ -139,21 +91,18 @@ struct GeneralSettingsView: View {
                 SettingLabel(
                     title: "Background helper",
                     symbol: "gearshape.2.fill",
-                    color: .gray,
                     info: "Keeps your password in the login Keychain and hands it to tinyTouch, encrypted, after a fingerprint match."
                 )
             }
             ToggleRow(
                 title: "Press Return after typing",
                 symbol: "return",
-                color: .blue,
                 info: "Submits the password field automatically after the password is typed.",
                 isOn: draft.bool("submit_enter")
             )
             NumberSettingRow(
                 title: "Typing delay",
                 symbol: "keyboard.fill",
-                color: .indigo,
                 info: "Pause after each key press. Increase it if a password field drops characters.",
                 value: draft.int("typing_delay_ms", in: range("typing_delay_ms")),
                 range: range("typing_delay_ms")
@@ -172,7 +121,6 @@ struct GeneralSettingsView: View {
                 SettingLabel(
                     title: "Keyboard layout",
                     symbol: "globe",
-                    color: .teal,
                     info: "Match Input Source types your password for your Latin keyboard layout, such as ABC or German. U.S. sends U.S. key positions as they are. If a non-Latin input source such as Russian is active, tinyTouch switches to your Latin layout while it types, then switches back. Applies to this Mac only and doesn't need a touch."
                 )
             }
@@ -182,7 +130,6 @@ struct GeneralSettingsView: View {
                 SettingLabel(
                     title: "Password",
                     symbol: "key.fill",
-                    color: .orange,
                     info: "Changes the password tinyTouch types. Fingerprints and pairing are kept."
                 )
             }
@@ -200,19 +147,17 @@ struct GeneralSettingsView: View {
                     Button("Set Up…") { store.setupRequest = .piv }
                 }
             } label: {
-                SettingLabel(title: "Identity", symbol: "person.text.rectangle.fill", color: .blue)
+                SettingLabel(title: "Identity", symbol: "person.text.rectangle.fill")
             }
             ToggleRow(
                 title: "Type PIN automatically",
                 symbol: "ellipsis.rectangle.fill",
-                color: .indigo,
                 info: "Enters the placeholder PIN after a fingerprint match. When off, type 111111 yourself.",
                 isOn: draft.bool("piv_auto_type")
             )
             NumberSettingRow(
                 title: "PIN entry delay",
                 symbol: "timer",
-                color: .orange,
                 info: "Wait before typing the PIN. Raise it if typing starts before the PIN field is ready.",
                 value: draft.int("piv_delay_ms", in: range("piv_delay_ms")),
                 range: range("piv_delay_ms"),
@@ -221,7 +166,6 @@ struct GeneralSettingsView: View {
             ToggleRow(
                 title: "Touch activation",
                 symbol: "hand.tap.fill",
-                color: .purple,
                 info: "Hides the smart card until you touch the sensor, so password sign-in stays available. Requires reconnecting.",
                 isOn: Binding(
                     get: { store.status?.pivTouch ?? false },
