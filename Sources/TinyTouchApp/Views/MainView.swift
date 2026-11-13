@@ -204,14 +204,9 @@ private struct ConnectionPill: View {
     @Environment(DeviceStore.self) private var store
 
     var body: some View {
-        HStack(spacing: 7) {
-            ConnectionBadge(showsPort: false, font: .callout.weight(.medium))
-            if store.isBusy {
-                ProgressView()
-                    .controlSize(.small)
-                    .transition(.scale.combined(with: .opacity))
-            }
-        }
+        // The toolbar measures the item once and moves it into the overflow menu if it
+        // grows, so the spinner takes the dot's place instead of adding width.
+        ConnectionBadge(showsPort: false, font: .callout.weight(.medium), showsActivity: true)
         .padding(.horizontal, 10)
         .help(store.port.map { "Connected on \($0.replacingOccurrences(of: "/dev/cu.", with: ""))" } ?? "")
         .motion(.snappy, value: store.isBusy)
