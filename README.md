@@ -1,105 +1,165 @@
+<div align="center">
+
+<img src="docs/images/icon.png" width="128" height="128" alt="tinyTouch app icon">
+
 # tinyTouch for macOS
 
-A macOS companion app for [tinyTouch](https://github.com/ZimengXiong/tinyTouch), the
-open-source fingerprint device by Zimeng Xiong: first-run setup, device settings, and
-a menu bar status item. It carries its own signed copy of the `tinytouch` CLI and
-runs it for every device operation, so nothing else needs to be installed and
-nothing opens Terminal.
+**Touch to sign in. A native Mac app for the tinyTouch fingerprint key.**
 
-This is an independent project and not part of upstream tinyTouch. It does not
-change the firmware: build, flash and update the device as upstream describes in its
-[setup guide](https://docs.tinytouch.dev/customer/setup).
+Set up, tune and keep an eye on your [tinyTouch](https://github.com/ZimengXiong/tinyTouch)
+without ever opening Terminal.
 
-There is no prebuilt download yet; build it from source.
+![macOS 27+](https://img.shields.io/badge/macOS-27%2B-000000?logo=apple&logoColor=white)
+![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
+![SwiftUI](https://img.shields.io/badge/UI-SwiftUI%20%C2%B7%20Liquid%20Glass-4A7BFF)
+[![MIT License](https://img.shields.io/badge/license-MIT-8A4FFF)](LICENSE)
 
-## Build
+<br>
 
-Requires Xcode 27 (the SwiftUI macros and `actool` are not part of the Command Line
-Tools) and a Python 3.13 with bundled Expat, such as one managed by `uv`, for the CLI.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.webp">
+  <img src="docs/images/overview-light.webp" width="820" alt="The Overview tab: the sensor with its glowing ring, fingerprint and helper status, a notice about a partly enrolled finger, and recent activity">
+</picture>
+
+</div>
+
+tinyTouch is an open-source fingerprint device by Zimeng Xiong. Touch the sensor and
+it types your Mac password, or signs you in as a smart card. This app is its home on
+the Mac: a guided setup, every device setting in one window, and a menu bar item that
+tells you it's ready. It carries its own signed copy of the `tinytouch` CLI, so there
+is nothing else to install.
+
+## Highlights
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Set up in a few minutes
+
+Connect tinyTouch, pick password entry or smart card, enroll a finger. The app checks
+your password against your macOS account before it saves it.
+
+</td>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/setup-dark.webp">
+  <img src="docs/images/setup-light.webp" alt="Setup: choosing between Password (HID) and Smart Card (PIV)">
+</picture>
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/enroll-dark.webp">
+  <img src="docs/images/enroll-light.webp" alt="Enrolling a finger: a ring fills as each of the four views is scanned">
+</picture>
+
+</td>
+<td width="50%" valign="top">
+
+### Enroll with guidance
+
+A ring fills in as each view is scanned, with plain instructions for where to place
+your finger next. Name your fingers so you know which is which.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Make the light yours
+
+Choose the idle, match and no-match colors and effects, preview them live, and play
+them on the device before you save.
+
+</td>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/lighting-dark.webp">
+  <img src="docs/images/lighting-light.webp" alt="Lighting: a live sensor preview, color and effect pickers, and the Apply bar with two changes">
+</picture>
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/prompt-dark.webp">
+  <img src="docs/images/prompt-light.webp" alt="Sign-In settings with the touch prompt asking to save three settings">
+</picture>
+
+</td>
+<td width="50%" valign="top">
+
+### One touch saves it all
+
+Changes wait in a floating Apply bar. When you're done, one touch on the sensor
+saves every one of them.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### See every touch
+
+Activity shows each touch and what it led to, from match to typed password, with
+search and filters.
+
+</td>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/activity-dark.webp">
+  <img src="docs/images/activity-light.webp" alt="Activity: touches grouped with what followed them, filterable by type">
+</picture>
+
+</td>
+</tr>
+</table>
+
+### And more
+
+- **Menu bar status.** See the mode, enrolled fingers and helper state at a glance,
+  and jump to the tab you need.
+- **Several Macs.** Name the computers registered on your tinyTouch and remove the
+  ones you no longer use.
+- **Works in the background.** Password entry keeps working with the window closed;
+  the background helper runs on its own.
+- **The CLI included.** Add the `tinytouch` command to your shell from the Application
+  settings. It
+  runs the copy inside the app, so it updates with the app.
+
+## Get started
+
+There is no prebuilt download yet. With Xcode 27 and `uv` installed:
 
 ```sh
 git clone --recurse-submodules https://github.com/tarakanof/tinyTouch-mac.git
 cd tinyTouch-mac
 TINYTOUCH_PYTHON="$(uv python find --managed-python 3.13)" ./build-app.sh
 cp -R dist/tinyTouch.app /Applications/
-swift test                             # parser, process runner and store tests
 ```
 
-`build-app.sh` builds the CLI from the `tinytouch` submodule unless
-`build/cli/bin/tinytouch` already exists (or `TINYTOUCH_CLI_BUNDLE` points at one),
-compiles `Resources/AppIcon.icon` with `actool`, and signs with your first
-Developer ID or Apple Development identity (override with `SIGN_IDENTITY`).
+Then open tinyTouch and follow the setup. The app does not change the firmware:
+build, flash and update the device as upstream describes in its
+[setup guide](https://docs.tinytouch.dev/customer/setup).
 
-## The CLI submodule
+## Documentation
 
-The app needs a few CLI and helper changes that upstream does not have yet: an app
-mode that takes secrets from stdin and reports setup events, saving several settings
-with one approval, and marking this Mac in the computers list. The `tinytouch`
-submodule therefore pins the `app-cli` branch of
-[tarakanof/tinyTouch-fork](https://github.com/tarakanof/tinyTouch-fork), which is
-upstream plus those changes. Once upstream has them, the submodule will point at
-upstream.
+- [Building](docs/building.md): requirements, signing, the CLI submodule and the
+  bundle layout.
+- [Using the app](docs/using.md): setup, saving changes, names, the background helper.
+- [Development](docs/development.md): tests, demo mode and screenshots.
 
-The app's version is in `VERSION`. The CLI and firmware keep their own versions.
+## About
 
-Use the same identity for every build. Keychain grants the background helper access
-by the CLI's signature, so a different identity makes the helper ask for Keychain
-authorization again.
-
-## Layout
-
-- `Contents/MacOS/TinyTouchApp` is the app.
-- `Contents/Resources/tinytouch/` is the PyInstaller CLI, signed as `com.tinytouch.cli`.
-  The HID helper's launch agent runs it from here.
-- `Contents/Helpers/tinytouch-askpass` shows the administrator password prompt that
-  `sudo` needs when the CLI pairs a smart card identity.
-
-## Usage
-
-- On first launch the app walks through connecting tinyTouch, choosing password
-  entry or smart card mode, and enrolling a finger. It runs
-  `tinytouch --app setup`, which reads the Mac password from stdin and reports
-  progress as `@tinytouch {json}` lines.
-- The main window opens on **Overview**: the sensor drawn with its ring in the saved
-  idle color, anything that needs attention, and the latest activity. The sidebar
-  also has Fingerprints, Lighting, Sign-In, Computers, Activity and Maintenance for
-  the device (⌘1 to ⌘7).
-- Device changes are staged and saved from the floating **Apply** bar. One touch
-  saves every staged setting, because the CLI writes them in one session; a change
-  of lighting mode is saved on its own and asks for a second touch. Lighting themes
-  are staged like any other edit.
-- The touch prompt stays up for the whole command and ends on "Approved". The CLI
-  prints nothing when a touch is accepted, so that confirmation comes from the
-  command exiting cleanly.
-- Fingers and registered computers can be named. The device stores no names, so
-  they are kept in this Mac's preferences. A finger's name is kept per slot and is
-  dropped once the device reports that slot empty; it is not tied to one tinyTouch.
-- Setup and Change Password check the password against the macOS account and ask
-  before saving one that doesn't match.
-- **Application** (⌘,) controls the menu bar icon, opening at login, notifications, and
-  installing the `tinytouch` command into `~/.local/bin`. **About** shows versions,
-  authors and links.
-- With the menu bar icon off, the app shows a Dock icon and quits when its window
-  closes. Password entry keeps working, because the background helper runs on its own.
-- If the helper was installed by a standalone CLI, the app moves it onto its bundled
-  CLI at launch when Keychain already trusts that signature, and otherwise asks for
-  the login Keychain password.
-
-The app never opens the serial port itself. The CLI coordinates port access with
-the HID helper, and the app watches IOKit for serial devices to notice plug and unplug.
-
-## Looking at the interface without a device
-
-`./demo.sh [scene] [--tab NAME]` opens a debug build filled with sample data. It
-never runs the CLI, so it is safe next to an installed tinyTouch, and it keeps its
-preferences under its own bundle identifier.
-
-```sh
-./demo.sh                         # connected device, Overview
-./demo.sh unsaved --tab lighting  # an edit waiting in the Apply bar
-./demo.sh prompt --tab sign-in    # the touch prompt
-```
-
-Scenes: `main`, `disconnected`, `prompt`, `approved`, `enroll`, `piv`, `setup`,
-`unsaved`. Tabs: `overview`, `fingers`, `lighting`, `sign-in`, `computers`,
-`activity`, `maintenance`, `app`, `menu`, `about`. Quit with ⌘Q or Ctrl-C.
+tinyTouch for macOS is an independent project by Dmitrii Tarakanov and is not part of
+upstream [tinyTouch](https://github.com/ZimengXiong/tinyTouch). Released under the
+[MIT License](LICENSE).
