@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AboutView: View {
     @Environment(DeviceStore.self) private var store
+    @Environment(Updater.self) private var updater
 
     var body: some View {
         Form {
@@ -20,7 +21,15 @@ struct AboutView: View {
             }
 
             Section("Versions") {
-                LabeledContent("App", value: appVersion)
+                LabeledContent("App") {
+                    HStack(spacing: 10) {
+                        Text(appVersion)
+                        if updater.isAvailable {
+                            Button("Check for Updates…") { updater.checkForUpdates() }
+                                .disabled(!updater.canCheckForUpdates)
+                        }
+                    }
+                }
                 LabeledContent("Command-line tool", value: store.cliVersion.isEmpty ? "—" : store.cliVersion)
                 LabeledContent("Firmware") {
                     Text(store.status.map { "\($0.firmware) (\($0.build))" } ?? "Not connected")

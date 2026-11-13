@@ -48,7 +48,13 @@ private struct FakeCLI {
             pause slow-fingers 0.3
             echo "Space for 9 additional fingers." ;;
           *" keyboard-layout") echo "HID keyboard layout: auto." ;;
-          *" setup "*) pause slow-setup 1; echo '@tinytouch {"event": "ready", "mode": "hid"}' ;;
+          *" setup "*)
+            pause slow-setup 1
+            if [ -f "$dir/setup-fails" ]; then echo "Error: The password did not match." >&2; exit 1; fi
+            echo '@tinytouch {"event": "ready", "mode": "hid"}' ;;
+          "--app repair"*)
+            if [ -f "$dir/repair-fails" ]; then echo "Error: Keychain authorization was denied." >&2; exit 1; fi
+            echo "Reinstalled the HID background service." ;;
           *) echo "Error: unexpected command: $*" >&2; exit 1 ;;
         esac
         """#).write(to: script, atomically: true, encoding: .utf8)
@@ -302,4 +308,70 @@ private func wait(until condition: () -> Bool) async throws {
     await store.refreshAll()
     #expect(preferences.fingerName(1) == "Right index")
     #expect(!preferences.hasFingerName(2))
+}
+
+// MARK: - The helper after an update
+
+@Test func theHelperIsReinstalledOnlyWhenItsCLIOrTheBuildChanged() {
+    let cli = "/Applications/tinyTouch.app/Contents/Resources/tinytouch/tinytouch"
+    // Installed by this build from this app's CLI: nothing to do.
+    #expect(!DeviceStore.helperNeedsReinstall(helperExecutable: cli, cli: cli, recordedBuild: "40", appBuild: "40"))
+    // The app was updated in place: same path, but the helper has the old CLI loaded.
+    #expect(DeviceStore.helperNeedsReinstall(helperExecutable: cli, cli: cli, recordedBuild: "34", appBuild: "40"))
+    // Nothing recorded yet, as after updating from 0.2.0.
+    #expect(DeviceStore.helperNeedsReinstall(helperExecutable: cli, cli: cli, recordedBuild: nil, appBuild: "40"))
+    // A helper installed by a standalone CLI.
+    #expect(DeviceStore.helperNeedsReinstall(
+        helperExecutable: "/Users/me/.local/bin/tinytouch", cli: cli, recordedBuild: "40", appBuild: "40"
+    ))
+}
+
+private func isolatedDefaults() -> UserDefaults {
+    let name = "tinytouch-tests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: name)!
+    defaults.removePersistentDomain(forName: name)
+    return defaults
+}
+
+@MainActor
+@Test func aSuccessfulSetupRecordsTheBuildThatInstalledTheHelper() async throws {
+    let fake = try FakeCLI()
+    defer { fake.remove() }
+    let defaults = isolatedDefaults()
+    let store = DeviceStore(cli: fake.cli, defaults: defaults)
+    await store.refreshAll()
+    #expect(await store.runSetup(mode: .hid, password: "secret"))
+    #expect(defaults.string(forKey: DeviceStore.helperBuildKey) == DeviceStore.appBuild)
+}
+
+@MainActor
+@Test func aFailedSetupRecordsNothing() async throws {
+    let fake = try FakeCLI()
+    defer { fake.remove() }
+    let defaults = isolatedDefaults()
+    let store = DeviceStore(cli: fake.cli, defaults: defaults)
+    await store.refreshAll()
+    fake.set("setup-fails")
+    #expect(await store.runSetup(mode: .hid, password: "secret") == false)
+    guard case .failed(let message) = store.setupPhase else {
+        Issue.record("expected a failed phase, got \(store.setupPhase)")
+        return
+    }
+    // The CLI ran and failed, rather than setup stopping for a missing device.
+    #expect(message.contains("did not match"))
+    #expect(defaults.string(forKey: DeviceStore.helperBuildKey) == nil)
+}
+
+@MainActor
+@Test func onlyASuccessfulRepairRecordsTheBuild() async throws {
+    let fake = try FakeCLI()
+    defer { fake.remove() }
+    let defaults = isolatedDefaults()
+    let store = DeviceStore(cli: fake.cli, defaults: defaults)
+    fake.set("repair-fails")
+    await store.repairHelper()
+    #expect(defaults.string(forKey: DeviceStore.helperBuildKey) == nil)
+    fake.clear("repair-fails")
+    await store.repairHelper()
+    #expect(defaults.string(forKey: DeviceStore.helperBuildKey) == DeviceStore.appBuild)
 }

@@ -221,8 +221,12 @@ final class DeviceStore {
         set { UserDefaults.standard.set(newValue, forKey: "port") }
     }
 
-    init(cli: CLI? = CLI.locate()) {
+    /// Holds which build last installed the helper; tests pass their own.
+    private let defaults: UserDefaults
+
+    init(cli: CLI? = CLI.locate(), defaults: UserDefaults = .standard) {
         self.cli = cli
+        self.defaults = defaults
         if cli == nil { connection = .noCLI }
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--tab"), index + 1 < arguments.count,
@@ -570,12 +574,17 @@ final class DeviceStore {
         await refreshStatus()
     }
 
-    /// Moves a helper installed by a standalone CLI onto the CLI inside this app.
-    /// Runs once per launch and only succeeds without prompting when Keychain
-    /// already trusts the bundled CLI's signature.
+    /// Moves a helper installed by a standalone CLI onto the CLI inside this app, and
+    /// reinstalls it once after the app was updated in place: the running helper keeps
+    /// the replaced CLI until it restarts, and a new CLI may install the service
+    /// differently. Runs once per launch and only succeeds without prompting when
+    /// Keychain already trusts the bundled CLI's signature.
     private func migrateHelperIfNeeded() async {
-        guard !helperMigrationAttempted, let cli, cli.isBundled, helperInstalled,
-              let helperExecutable, !Self.isSameFile(helperExecutable, cli.executable.path) else { return }
+        guard !helperMigrationAttempted, let cli, cli.isBundled, helperInstalled, let helperExecutable,
+              Self.helperNeedsReinstall(
+                  helperExecutable: helperExecutable, cli: cli.executable.path,
+                  recordedBuild: defaults.string(forKey: Self.helperBuildKey), appBuild: Self.appBuild
+              ) else { return }
         helperMigrationAttempted = true
         // Any other failure leaves the old helper running; Repair reports the reason.
         if (try? await installHelper(["--app", "_upgrade-helper"], keychainPassword: nil)) == false {
@@ -586,6 +595,20 @@ final class DeviceStore {
 
     /// Set when Keychain must be unlocked to let this app's CLI read saved credentials.
     var needsKeychainPassword = false
+
+    /// The app build whose CLI last installed the helper.
+    static let helperBuildKey = "helperBuild"
+    static var appBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+    }
+
+    /// The helper needs reinstalling when it runs another CLI, or when this build
+    /// hasn't installed it yet: after an update it still has the old CLI loaded.
+    nonisolated static func helperNeedsReinstall(
+        helperExecutable: String, cli: String, recordedBuild: String?, appBuild: String
+    ) -> Bool {
+        recordedBuild != appBuild || !isSameFile(helperExecutable, cli)
+    }
 
     /// Reinstalls the helper. Keychain asks for the login password only when the
     /// saved credentials don't trust this CLI yet.
@@ -608,6 +631,8 @@ final class DeviceStore {
             _ = try await cli.run(arguments, input: keychainPassword.map { $0 + "\n" }) { line in
                 if line.contains(#""event": "keychain_password""#) { askedForPassword = true }
             }
+            // The helper now runs this build's CLI.
+            defaults.set(Self.appBuild, forKey: Self.helperBuildKey)
             return true
         } catch {
             guard askedForPassword, keychainPassword == nil else { throw error }
@@ -637,6 +662,8 @@ final class DeviceStore {
         await perform(quiet: true) {
             do {
                 _ = try await run.value
+                // Setup installed the helper from this build's CLI.
+                defaults.set(Self.appBuild, forKey: Self.helperBuildKey)
             } catch is CancellationError {
                 outcome = .idle
             } catch {
@@ -829,7 +856,7 @@ final class DeviceStore {
         (try? JSONDecoder().decode([String].self, from: Data(json.utf8))) ?? []
     }
 
-    private static func isSameFile(_ first: String, _ second: String) -> Bool {
+    private nonisolated static func isSameFile(_ first: String, _ second: String) -> Bool {
         URL(fileURLWithPath: first).resolvingSymlinksInPath().path
             == URL(fileURLWithPath: second).resolvingSymlinksInPath().path
     }

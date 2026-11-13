@@ -4,7 +4,12 @@ import SwiftUI
 struct AppSettingsView: View {
     @Environment(AppPreferences.self) private var preferences
     @Environment(DeviceStore.self) private var store
+    @Environment(Updater.self) private var updater
     @State private var error: String?
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
 
     var body: some View {
         Form {
@@ -63,6 +68,33 @@ struct AppSettingsView: View {
                 }
             } header: {
                 SectionHeader("Command Line")
+            }
+
+            if updater.isAvailable {
+                Section {
+                    @Bindable var updater = updater
+                    ToggleRow(
+                        title: "Check for updates automatically",
+                        symbol: "arrow.triangle.2.circlepath",
+                        info: "Looks for a new version once a day and asks before installing it.",
+                        isOn: $updater.automaticallyChecksForUpdates
+                    )
+                    ToggleRow(
+                        title: "Download updates in the background",
+                        symbol: "arrow.down.circle.fill",
+                        info: "Downloads a new version as soon as it's found and installs it when tinyTouch quits.",
+                        isOn: $updater.automaticallyDownloadsUpdates
+                    )
+                    .disabled(!updater.automaticallyChecksForUpdates)
+                    LabeledContent {
+                        Button("Check Now") { updater.checkForUpdates() }
+                            .disabled(!updater.canCheckForUpdates)
+                    } label: {
+                        SettingLabel(title: "Version \(appVersion)", symbol: "app.badge.fill")
+                    }
+                } header: {
+                    SectionHeader("Updates")
+                }
             }
         }
         .formStyle(.grouped)

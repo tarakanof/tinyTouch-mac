@@ -8,10 +8,11 @@ if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app ]; then
   export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi
 
-version="$(cat VERSION 2>/dev/null || echo 0.0.0)"
+version="${APP_VERSION:-$(cat VERSION 2>/dev/null || echo 0.0.0)}"
 # CFBundleShortVersionString allows only numbers and dots.
 version="${version%%-*}"
-build="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+# Sparkle offers an update when the appcast's build number is higher than this.
+build="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
 
 # The CLI is built from the tinytouch submodule; set TINYTOUCH_CLI_BUNDLE to reuse a build.
 cli="${TINYTOUCH_CLI_BUNDLE:-build/cli/bin/tinytouch}"
@@ -31,8 +32,12 @@ bin="$(swift build -c release --show-bin-path)"
 
 app=dist/tinyTouch.app
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers" "$app/Contents/Frameworks"
 cp "$bin/TinyTouchApp" "$app/Contents/MacOS/TinyTouchApp"
+ditto "$bin/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
+# Sparkle uses its XPC services only in sandboxed apps; this app isn't sandboxed.
+rm -rf "$app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" \
+  "$app/Contents/Frameworks/Sparkle.framework/XPCServices"
 cp "$bin/TinyTouchAskpass" "$app/Contents/Helpers/tinytouch-askpass"
 ditto "$cli" "$app/Contents/Resources/tinytouch"
 xcrun actool Resources/AppIcon.icon --compile "$app/Contents/Resources" \
@@ -66,6 +71,11 @@ if [ "${RELEASE:-0}" = 1 ]; then
 fi
 codesign --force --sign "${identity:--}" --options runtime $timestamp \
   "$app/Contents/Helpers/tinytouch-askpass"
+# Sparkle's helpers inside out, then the framework, as Sparkle documents.
+sparkle="$app/Contents/Frameworks/Sparkle.framework"
+codesign --force --sign "${identity:--}" --options runtime $timestamp "$sparkle/Versions/B/Autoupdate"
+codesign --force --sign "${identity:--}" --options runtime $timestamp "$sparkle/Versions/B/Updater.app"
+codesign --force --sign "${identity:--}" --options runtime $timestamp "$sparkle"
 # The CLI keeps its own signature and identifier so Keychain keeps trusting it.
 codesign --force --sign "${identity:--}" --options runtime $timestamp "$app"
 codesign --verify --strict "$app"
