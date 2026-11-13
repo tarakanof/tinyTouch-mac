@@ -138,23 +138,22 @@ search and filters.
 
 ## Get started
 
-There is no prebuilt download yet. With Xcode 27 and `uv` installed:
+1. Download `tinyTouch-<version>.dmg` from the
+   [latest release](https://github.com/tarakanof/tinyTouch-mac/releases/latest).
+   It needs macOS 27 on a Mac with Apple silicon.
+2. Open it and drag **tinyTouch** onto **Applications**.
+3. Open tinyTouch from Applications, connect your tinyTouch, and follow the setup.
 
-```sh
-git clone --recurse-submodules https://github.com/tarakanof/tinyTouch-mac.git
-cd tinyTouch-mac
-TINYTOUCH_PYTHON="$(uv python find --managed-python 3.13)" ./build-app.sh
-cp -R dist/tinyTouch.app /Applications/
-```
-
-Then open tinyTouch and follow the setup. The app does not change the firmware:
-build, flash and update the device as upstream describes in its
+The app is signed and notarized by Apple. It does not change the firmware: build,
+flash and update the device as upstream describes in its
 [setup guide](https://docs.tinytouch.dev/customer/setup).
+
+Prefer to build it yourself? See [Building](docs/building.md).
 
 ## Documentation
 
-- [Building](docs/building.md): requirements, signing, the CLI submodule and the
-  bundle layout.
+- [Building](docs/building.md): requirements, signing, releases, the CLI submodule
+  and the bundle layout.
 - [Using the app](docs/using.md): setup, saving changes, names, the background helper.
 - [Development](docs/development.md): tests, demo mode and screenshots.
 
