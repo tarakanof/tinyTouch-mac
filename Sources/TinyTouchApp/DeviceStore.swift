@@ -221,8 +221,12 @@ final class DeviceStore {
         set { UserDefaults.standard.set(newValue, forKey: "port") }
     }
 
-    init(cli: CLI? = CLI.locate()) {
+    /// Holds which build last installed the helper; tests pass their own.
+    private let defaults: UserDefaults
+
+    init(cli: CLI? = CLI.locate(), defaults: UserDefaults = .standard) {
         self.cli = cli
+        self.defaults = defaults
         if cli == nil { connection = .noCLI }
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--tab"), index + 1 < arguments.count,
@@ -576,10 +580,11 @@ final class DeviceStore {
     /// differently. Runs once per launch and only succeeds without prompting when
     /// Keychain already trusts the bundled CLI's signature.
     private func migrateHelperIfNeeded() async {
-        guard !helperMigrationAttempted, let cli, cli.isBundled, helperInstalled,
-              let helperExecutable else { return }
-        let updated = UserDefaults.standard.string(forKey: Self.helperBuildKey) != Self.appBuild
-        guard updated || !Self.isSameFile(helperExecutable, cli.executable.path) else { return }
+        guard !helperMigrationAttempted, let cli, cli.isBundled, helperInstalled, let helperExecutable,
+              Self.helperNeedsReinstall(
+                  helperExecutable: helperExecutable, cli: cli.executable.path,
+                  recordedBuild: defaults.string(forKey: Self.helperBuildKey), appBuild: Self.appBuild
+              ) else { return }
         helperMigrationAttempted = true
         // Any other failure leaves the old helper running; Repair reports the reason.
         if (try? await installHelper(["--app", "_upgrade-helper"], keychainPassword: nil)) == false {
@@ -591,9 +596,18 @@ final class DeviceStore {
     /// Set when Keychain must be unlocked to let this app's CLI read saved credentials.
     var needsKeychainPassword = false
 
-    private static let helperBuildKey = "helperBuild"
-    private static var appBuild: String {
+    /// The app build whose CLI last installed the helper.
+    static let helperBuildKey = "helperBuild"
+    static var appBuild: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+    }
+
+    /// The helper needs reinstalling when it runs another CLI, or when this build
+    /// hasn't installed it yet: after an update it still has the old CLI loaded.
+    nonisolated static func helperNeedsReinstall(
+        helperExecutable: String, cli: String, recordedBuild: String?, appBuild: String
+    ) -> Bool {
+        recordedBuild != appBuild || !isSameFile(helperExecutable, cli)
     }
 
     /// Reinstalls the helper. Keychain asks for the login password only when the
@@ -618,7 +632,7 @@ final class DeviceStore {
                 if line.contains(#""event": "keychain_password""#) { askedForPassword = true }
             }
             // The helper now runs this build's CLI.
-            UserDefaults.standard.set(Self.appBuild, forKey: Self.helperBuildKey)
+            defaults.set(Self.appBuild, forKey: Self.helperBuildKey)
             return true
         } catch {
             guard askedForPassword, keychainPassword == nil else { throw error }
@@ -649,7 +663,7 @@ final class DeviceStore {
             do {
                 _ = try await run.value
                 // Setup installed the helper from this build's CLI.
-                UserDefaults.standard.set(Self.appBuild, forKey: Self.helperBuildKey)
+                defaults.set(Self.appBuild, forKey: Self.helperBuildKey)
             } catch is CancellationError {
                 outcome = .idle
             } catch {
@@ -842,7 +856,7 @@ final class DeviceStore {
         (try? JSONDecoder().decode([String].self, from: Data(json.utf8))) ?? []
     }
 
-    private static func isSameFile(_ first: String, _ second: String) -> Bool {
+    private nonisolated static func isSameFile(_ first: String, _ second: String) -> Bool {
         URL(fileURLWithPath: first).resolvingSymlinksInPath().path
             == URL(fileURLWithPath: second).resolvingSymlinksInPath().path
     }
