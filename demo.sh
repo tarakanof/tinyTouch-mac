@@ -15,8 +15,11 @@ swift build
 # preferences apart from the real app's.
 app=.build/tinyTouch-demo.app
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS"
-cp "$(swift build --show-bin-path)/TinyTouchApp" "$app/Contents/MacOS/TinyTouchApp"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Frameworks"
+bin="$(swift build --show-bin-path)"
+cp "$bin/TinyTouchApp" "$app/Contents/MacOS/TinyTouchApp"
+# The app links Sparkle even though debug builds never update themselves.
+ditto "$bin/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 sed -e 's/__VERSION__/0.0.0/' -e 's/__BUILD__/1/' \
   -e 's/dev.tinytouch.settings/dev.tinytouch.settings.demo/' \
   Resources/Info.plist > "$app/Contents/Info.plist"
