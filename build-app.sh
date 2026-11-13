@@ -44,10 +44,30 @@ sed -e "s/__VERSION__/$version/" -e "s/__BUILD__/$build/" Resources/Info.plist >
 # the app is installed; macOS tracks ad-hoc signed apps by path.
 identity="${SIGN_IDENTITY:-$(security find-identity -p codesigning -v 2>/dev/null |
   awk -F'"' '/Developer ID Application|Apple Development/ {print $2; exit}')}"
-codesign --force --sign "${identity:--}" --options runtime --timestamp=none \
+timestamp=--timestamp=none
+if [ "${RELEASE:-0}" = 1 ]; then
+  # Notarization needs a Developer ID signature, a secure timestamp and the
+  # hardened runtime on every executable in the bundle.
+  case "$identity" in
+    "Developer ID Application:"*) ;;
+    *) echo "A release needs a Developer ID Application identity, not '${identity:-ad-hoc}'." >&2; exit 1 ;;
+  esac
+  timestamp=--timestamp
+  cli_dir="$app/Contents/Resources/tinytouch"
+  find "$cli_dir/_internal" -type f \( -name '*.so' -o -name '*.dylib' \) -print0 |
+    xargs -0 codesign --force --sign "$identity" --options runtime --timestamp
+  # Keep the requirement the CLI's own signing script pins, so Keychain keeps
+  # trusting the helper across builds: product identifier and team, no hash.
+  team="$(codesign -d --verbose=2 "$cli_dir/tinytouch" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+  requirement="identifier \"com.tinytouch.cli\" and anchor apple generic and certificate leaf[subject.OU] = \"$team\""
+  codesign --force --sign "$identity" --identifier com.tinytouch.cli --options runtime --timestamp \
+    --requirements "=designated => $requirement" "$cli_dir/tinytouch"
+  codesign --verify --strict -R "=$requirement" "$cli_dir/tinytouch"
+fi
+codesign --force --sign "${identity:--}" --options runtime $timestamp \
   "$app/Contents/Helpers/tinytouch-askpass"
 # The CLI keeps its own signature and identifier so Keychain keeps trusting it.
-codesign --force --sign "${identity:--}" --options runtime --timestamp=none "$app"
+codesign --force --sign "${identity:--}" --options runtime $timestamp "$app"
 codesign --verify --strict "$app"
 echo "Signed with: ${identity:-ad-hoc}"
 
