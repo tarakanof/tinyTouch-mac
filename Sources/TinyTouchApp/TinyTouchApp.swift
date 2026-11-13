@@ -9,6 +9,7 @@ struct TinyTouchApp: App {
             MainView()
                 .environment(delegate.store)
                 .environment(delegate.preferences)
+                .environment(delegate.updater)
         }
         .defaultSize(width: 780, height: 680)
         .defaultLaunchBehavior(delegate.opensWindowAtLaunch ? .presented : .suppressed)
@@ -17,6 +18,10 @@ struct TinyTouchApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About tinyTouch") { delegate.showMainWindow(tab: .about) }
+                if delegate.updater.isAvailable {
+                    Button("Check for Updates…") { delegate.updater.checkForUpdates() }
+                        .disabled(!delegate.updater.canCheckForUpdates)
+                }
             }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { delegate.showMainWindow(tab: .app) }
@@ -53,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let preferences = AppPreferences()
     let store = DeviceStore()
+    let updater = Updater()
     /// Captured from a live view, since only views can open SwiftUI windows.
     var openWindow: OpenWindowAction?
 
