@@ -1,6 +1,8 @@
 # Building tinyTouch for macOS
 
-There is no prebuilt download yet; build it from source.
+Most people should download the notarized disk image from the
+[latest release](https://github.com/tarakanof/tinyTouch-mac/releases/latest).
+Build from source to change the app, or to make a release.
 
 ## Requirements
 
@@ -33,6 +35,41 @@ with the new build, and open it again. The background helper restarts on its own
 Use the same identity for every build. Keychain grants the background helper access
 by the CLI's signature, so a different identity makes the helper ask for Keychain
 authorization again.
+
+## Making a release
+
+`release.sh` builds `dist/tinyTouch-<version>.dmg`, signed with Developer ID and
+notarized, plus its SHA-256 checksum. It needs a clean working tree, a Developer
+ID Application identity, and a `notarytool` keychain profile. Create the profile
+once, in Terminal, with an app-specific password from account.apple.com:
+
+```sh
+xcrun notarytool store-credentials tinytouch-notary --apple-id <apple-id> --team-id <team-id>
+```
+
+Then:
+
+1. Set the version in `VERSION` and commit it.
+2. Run `./release.sh` (`NOTARY_PROFILE=<name>` picks another profile). It builds
+   with `RELEASE=1`, notarizes and staples the app, packs it into a disk image with
+   a link to Applications, then notarizes and staples the disk image. Each
+   notarization usually takes a few minutes.
+3. Publish it:
+
+   ```sh
+   v=$(cat VERSION)
+   gh release create "v$v" "dist/tinyTouch-$v.dmg" "dist/tinyTouch-$v.dmg.sha256" \
+     --title "tinyTouch $v" --generate-notes
+   ```
+
+`RELEASE=1 ./build-app.sh` is what makes the bundle notarizable: it signs the CLI
+and its Python libraries with the hardened runtime and a secure timestamp. The CLI
+keeps the designated requirement its own signing script pins (`com.tinytouch.cli`
+and the team), so Keychain keeps trusting the helper after an update.
+
+When the app runs from the disk image, or from a copy macOS translocated, it offers
+to move itself to `/Applications` before doing anything else, because setup
+records the CLI's path in the helper's launch agent.
 
 ## The CLI submodule
 
